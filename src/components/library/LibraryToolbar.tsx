@@ -1,6 +1,5 @@
 import { Loader2, Search, X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 interface LibraryToolbarProps {
@@ -21,9 +20,9 @@ export function LibraryToolbar({
   onImportClick,
 }: LibraryToolbarProps) {
   return (
-    <header className="border-b border-[--color-border] px-6 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="relative w-full max-w-[220px]">
+    <header className="relative z-20 shrink-0 border-b border-[--color-border] bg-[--color-bg-content] px-6 py-4">
+      <div className="flex min-h-10 items-center">
+        <div className="relative w-full max-w-[220px] shrink-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[--color-text-muted]" />
           <Input
             value={searchQuery}
@@ -42,24 +41,27 @@ export function LibraryToolbar({
             </button>
           ) : null}
         </div>
+      </div>
 
-        <div className="flex items-center gap-3">
-          {isImporting ? (
-            <div className="inline-flex items-center gap-2 text-sm text-[--color-text-secondary]">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Importing…</span>
-            </div>
-          ) : null}
+      <div className="fixed right-6 top-6 z-40 flex items-center gap-3">
+        {isImporting ? (
+          <div className="inline-flex items-center gap-2 rounded-full bg-[--color-bg-surface] px-3 py-2 text-sm text-[--color-text-secondary] shadow-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Importing…</span>
+          </div>
+        ) : null}
 
-          <Button
-            type="button"
-            onClick={onImportClick}
-            className="rounded-full bg-[--color-primary] px-5 text-white hover:brightness-90"
-            disabled={isImporting}
-          >
-            {importLabel} +
-          </Button>
-        </div>
+        <button
+          type="button"
+          onClick={onImportClick}
+          disabled={isImporting}
+          className="inline-flex h-10 min-w-[144px] items-center justify-center rounded-full bg-[--color-primary] px-5 text-sm font-medium text-white shadow-sm transition hover:brightness-90 disabled:opacity-50"
+        >
+          {importLabel}
+          <span className="ml-2 text-base leading-none" aria-hidden="true">
+            +
+          </span>
+        </button>
       </div>
     </header>
   );

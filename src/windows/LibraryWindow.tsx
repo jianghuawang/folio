@@ -213,7 +213,7 @@ export default function LibraryWindow() {
           onSectionChange={setSection}
         />
 
-        <section className="flex min-h-screen flex-1 flex-col bg-[--color-bg-content]">
+        <section className="relative isolate flex min-h-screen flex-1 flex-col bg-[--color-bg-content]">
           <LibraryToolbar
             isImporting={importInProgress || importBooksMutation.isPending}
             searchQuery={searchQuery}
@@ -222,7 +222,7 @@ export default function LibraryWindow() {
             onImportClick={() => void handleImportClick()}
           />
 
-          <div className="flex-1 px-6 py-8">
+          <div className="relative z-0 flex-1 px-6 py-8">
             <div className="mx-auto max-w-[1504px]">
               <div className="mb-8">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[--color-text-section]">
