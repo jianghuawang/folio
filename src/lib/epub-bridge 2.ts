@@ -39,8 +39,8 @@ const DEFAULT_FONT_SIZE = "18px";
 const DEFAULT_FONT_FAMILY = "Georgia, serif";
 const DEFAULT_LINE_HEIGHT = "1.6";
 const COVER_SECTION_HINTS = ["cover", "titlepage", "title-page", "frontcover", "front-cover"];
-const TRACKPAD_SWIPE_THRESHOLD = 90;
-const MIN_HORIZONTAL_DELTA = 8;
+const TRACKPAD_SWIPE_THRESHOLD = 32;
+const MIN_HORIZONTAL_DELTA = 2;
 
 function flattenTocItems(items: NavItem[], depth = 0): ReaderTocItem[] {
   return items.flatMap((item) => {
@@ -219,12 +219,10 @@ function applyReaderTheme(rendition: Rendition) {
 
 function updateReaderMargins(rendition: Rendition) {
   const horizontalPadding = window.innerWidth >= 800 ? "80px" : "40px";
-  const topPadding = window.innerWidth >= 800 ? "124px" : "112px";
-  const bottomPadding = window.innerWidth >= 800 ? "68px" : "56px";
   rendition.themes.override("padding-left", horizontalPadding);
   rendition.themes.override("padding-right", horizontalPadding);
-  rendition.themes.override("padding-top", topPadding);
-  rendition.themes.override("padding-bottom", bottomPadding);
+  rendition.themes.override("padding-top", "88px");
+  rendition.themes.override("padding-bottom", "64px");
 }
 
 function toReaderError(error: unknown) {
@@ -288,12 +286,23 @@ export async function createEpubBridge({
       contents.document.documentElement,
       wheelNavigationHandler.handleWheel,
     );
+    const frameElement = contents.window.frameElement;
+    const unlistenFrameWheel = attachWheelNavigation(
+      frameElement,
+      wheelNavigationHandler.handleWheel,
+    );
+
+    if (frameElement instanceof HTMLElement) {
+      frameElement.style.overscrollBehavior = "none";
+    }
+
     contentCleanupCallbacks.add(() => {
       contents.document.removeEventListener("keydown", handleKeyDown);
       unlistenDocumentWheel();
       unlistenWindowWheel();
       unlistenBodyWheel();
       unlistenDocumentElementWheel();
+      unlistenFrameWheel();
     });
   });
 

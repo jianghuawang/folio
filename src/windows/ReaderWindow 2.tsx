@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { EpubViewer } from "@/components/reader/EpubViewer";
-import { PageChevrons } from "@/components/reader/PageChevrons";
 import { ProgressBar } from "@/components/reader/ProgressBar";
 import { ReaderToolbar } from "@/components/reader/ReaderToolbar";
 import { TocDrawer } from "@/components/reader/TocDrawer";
@@ -193,19 +192,6 @@ export default function ReaderWindow() {
           visible={toolbarVisible || tocOpen}
           onToggleToc={() => {
             setTocOpen((current) => !current);
-            showToolbar();
-          }}
-        />
-
-        <PageChevrons
-          disabled={!bridge}
-          visible={toolbarVisible}
-          onPrev={() => {
-            void bridge?.prev();
-            showToolbar();
-          }}
-          onNext={() => {
-            void bridge?.next();
             showToolbar();
           }}
         />

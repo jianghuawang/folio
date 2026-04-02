@@ -1,10 +1,8 @@
 import {
-  BookMarked,
   Bookmark,
-  Globe,
-  LayoutPanelLeft,
-  Palette,
-  Type,
+  Menu,
+  NotebookTabs,
+  Search,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -34,7 +32,7 @@ function ToolbarIconButton({
       size="icon"
       disabled={disabled}
       onClick={onClick}
-      className="h-9 w-9 rounded-full text-[--color-text-secondary] disabled:opacity-100 hover:bg-white/10 hover:text-[--color-text-primary]"
+      className="h-10 w-10 rounded-full text-black/70 disabled:opacity-100 hover:bg-black/[0.05] hover:text-black/85"
       aria-label={label}
       title={label}
     >
@@ -45,46 +43,50 @@ function ToolbarIconButton({
 
 export function ReaderToolbar({ title, visible, onToggleToc }: ReaderToolbarProps) {
   return (
-    <div
-      className={[
-        "relative z-20 flex h-14 shrink-0 items-center justify-between border-b border-[--color-border] bg-[--color-bg-window] px-4 sm:px-6",
-      ].join(" ")}
-    >
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-5 pt-3">
       <div
         className={[
-          "flex items-center gap-3 transition-opacity duration-200 ease-out",
+          "absolute left-5 top-3 flex items-center transition-opacity duration-200 ease-out",
           visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
         ].join(" ")}
       >
-        <div className="flex items-center rounded-full border border-[--color-border] bg-white/[0.04] p-1 shadow-sm">
+        <div className="flex items-center rounded-full border border-black/5 bg-white/92 p-1 shadow-[0_12px_30px_rgba(0,0,0,0.10)] backdrop-blur-xl">
           <ToolbarIconButton
-            icon={<LayoutPanelLeft className="h-4 w-4" />}
+            icon={<Menu className="h-5 w-5 stroke-[1.75]" />}
             label="TOC"
             onClick={onToggleToc}
           />
-          <ToolbarIconButton disabled icon={<Palette className="h-4 w-4" />} label="Theme" />
           <ToolbarIconButton
             disabled
-            icon={<BookMarked className="h-4 w-4" />}
-            label="Annotations"
+            icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />}
+            label="Bookmarks"
           />
+          <ToolbarIconButton disabled icon={<NotebookTabs className="h-5 w-5 stroke-[1.75]" />} label="Notes" />
         </div>
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2 px-4 text-center text-[13px] font-light tracking-[0.01em] text-[--color-text-muted]">
+      <div className="pointer-events-none absolute left-1/2 top-6 -translate-x-1/2 px-4 text-center text-[13px] font-semibold tracking-[0.01em] text-black/80">
         {title}
       </div>
 
       <div
         className={[
-          "flex items-center gap-3 transition-opacity duration-200 ease-out",
+          "absolute right-5 top-3 flex items-center transition-opacity duration-200 ease-out",
           visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
         ].join(" ")}
       >
-        <div className="flex items-center rounded-full border border-[--color-border] bg-white/[0.04] p-1 shadow-sm">
-          <ToolbarIconButton disabled icon={<Type className="h-4 w-4" />} label="Aa" />
-          <ToolbarIconButton disabled icon={<Globe className="h-4 w-4" />} label="Translate" />
-          <ToolbarIconButton disabled icon={<Bookmark className="h-4 w-4" />} label="Notes" />
+        <div className="flex items-center rounded-full border border-black/5 bg-white/92 p-1 shadow-[0_12px_30px_rgba(0,0,0,0.10)] backdrop-blur-xl">
+          <button
+            type="button"
+            disabled
+            className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold tracking-[-0.02em] text-black/70"
+            aria-label="Reader settings"
+            title="Reader settings"
+          >
+            Aa
+          </button>
+          <ToolbarIconButton disabled icon={<Search className="h-5 w-5 stroke-[1.75]" />} label="Search" />
+          <ToolbarIconButton disabled icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />} label="Notes" />
         </div>
       </div>
     </div>
