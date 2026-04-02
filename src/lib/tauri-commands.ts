@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { Book, ImportBookResult, LibraryFilter } from "@/types/book";
+import type { ReadingSettings, ReadingSettingsUpdate } from "@/types/settings";
 
 export class FolioError extends Error {
   readonly code: string;
@@ -92,5 +93,81 @@ export async function deleteBook(bookId: string): Promise<void> {
     }
 
     throw new FolioError("DELETE_BOOK_FAILED", `Failed to delete book: ${String(error)}`);
+  }
+}
+
+export async function openReaderWindow(bookId: string): Promise<void> {
+  try {
+    await invokeTauri<void>("open_reader_window", { book_id: bookId });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError(
+      "OPEN_READER_WINDOW_FAILED",
+      `Failed to open reader window: ${String(error)}`,
+    );
+  }
+}
+
+export async function saveReadingPosition(
+  bookId: string,
+  cfi: string,
+  progress: number,
+): Promise<void> {
+  try {
+    await invokeTauri<void>("save_reading_position", {
+      book_id: bookId,
+      cfi,
+      progress,
+    });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError(
+      "SAVE_READING_POSITION_FAILED",
+      `Failed to save reading position: ${String(error)}`,
+    );
+  }
+}
+
+export async function getReadingSettings(bookId: string): Promise<ReadingSettings> {
+  try {
+    return await invokeTauri<ReadingSettings>("get_reading_settings", {
+      book_id: bookId,
+    });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError(
+      "GET_READING_SETTINGS_FAILED",
+      `Failed to load reading settings: ${String(error)}`,
+    );
+  }
+}
+
+export async function updateReadingSettings(
+  bookId: string,
+  settings: ReadingSettingsUpdate,
+): Promise<ReadingSettings> {
+  try {
+    return await invokeTauri<ReadingSettings>("update_reading_settings", {
+      book_id: bookId,
+      settings,
+    });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError(
+      "UPDATE_READING_SETTINGS_FAILED",
+      `Failed to update reading settings: ${String(error)}`,
+    );
   }
 }

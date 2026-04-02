@@ -1,96 +1,266 @@
-const SHELL_BOOK_COUNT = 8;
+import { useMemo, useState } from "react";
 
-function SidebarRow({
-  label,
-  count,
-  active,
-}: {
-  label: string;
-  count: number | string;
-  active?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className={[
-        "flex h-9 w-full items-center justify-between rounded-md px-3 text-sm transition-colors",
-        active
-          ? "bg-[--color-sidebar-active-bg] text-[--color-sidebar-active-text]"
-          : "text-[--color-text-muted] hover:bg-white/5 hover:text-[--color-text-primary]",
-      ].join(" ")}
-    >
-      <span>{label}</span>
-      <span className="text-xs text-[--color-text-muted]">{count}</span>
-    </button>
-  );
+import { BookContextMenu } from "@/components/library/BookContextMenu";
+import { BookGrid } from "@/components/library/BookGrid";
+import { BookInfoSheet } from "@/components/library/BookInfoSheet";
+import { DropZone } from "@/components/library/DropZone";
+import { DuplicateBanner } from "@/components/library/DuplicateBanner";
+import { EmptyState } from "@/components/library/EmptyState";
+import { LibraryToolbar } from "@/components/library/LibraryToolbar";
+import { Sidebar } from "@/components/library/Sidebar";
+import { useBooks, useDeleteBook, useImportBooks } from "@/hooks/useBooks";
+import { useLibraryFilter } from "@/hooks/useLibraryFilter";
+import { openReaderWindow } from "@/lib/tauri-commands";
+import { useLibraryStore } from "@/store/libraryStore";
+import type { Book } from "@/types/book";
+
+interface ContextMenuState {
+  book: Book;
+  x: number;
+  y: number;
 }
 
-function ShellBookCard({ index }: { index: number }) {
+function InlineError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
-    <article className="space-y-2">
-      <div className="aspect-[8/11] w-full rounded-sm bg-[--color-bg-surface] animate-pulse" />
-      <div className="space-y-1">
-        <div className="h-3 w-4/5 rounded-full bg-white/10" />
-        <div className="h-3 w-3/5 rounded-full bg-white/5" />
-        <div className="pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[--color-text-muted]">
-          {index % 3 === 0 ? "NEW" : `${(index + 1) * 3}%`}
-        </div>
-      </div>
-    </article>
+    <div className="mx-auto max-w-md rounded-2xl border border-[--color-border] bg-[--color-bg-elevated] p-6 text-center">
+      <p className="text-sm text-[--color-destructive]">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-3 text-sm text-[--color-primary] underline underline-offset-4"
+      >
+        Retry
+      </button>
+    </div>
   );
 }
 
 export default function LibraryWindow() {
+  const setImportInProgress = useLibraryStore((state) => state.setImportInProgress);
+  const importInProgress = useLibraryStore((state) => state.importInProgress);
+  const duplicateTitles = useLibraryStore((state) => state.duplicateTitles);
+  const setDuplicateTitles = useLibraryStore((state) => state.setDuplicateTitles);
+  const clearDuplicateTitles = useLibraryStore((state) => state.clearDuplicateTitles);
+  const dropZoneVisible = useLibraryStore((state) => state.dropZoneVisible);
+  const setDropZoneVisible = useLibraryStore((state) => state.setDropZoneVisible);
+
+  const allBooksQuery = useBooks("all");
+  const recentBooksQuery = useBooks("recent");
+  const importBooksMutation = useImportBooks();
+  const deleteBookMutation = useDeleteBook();
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [bookInfoId, setBookInfoId] = useState<string | null>(null);
+  const [bookInfoOpen, setBookInfoOpen] = useState(false);
+
+  const {
+    section,
+    searchQuery,
+    debouncedQuery,
+    isSearchActive,
+    filteredBooks,
+    setSection,
+    setSearchQuery,
+    clearSearch,
+  } = useLibraryFilter({
+    allBooks: allBooksQuery.data ?? [],
+    recentBooks: recentBooksQuery.data ?? [],
+  });
+
+  const activeQuery = isSearchActive || section === "all" ? allBooksQuery : recentBooksQuery;
+  const heading = isSearchActive ? `${filteredBooks.length} books match "${debouncedQuery}"` : section === "recent" ? "Recently Read" : "All";
+  const isLibraryEmpty = !allBooksQuery.isLoading && (allBooksQuery.data?.length ?? 0) === 0;
+  const hasSearchNoResults = isSearchActive && !activeQuery.isLoading && filteredBooks.length === 0;
+  const isGridLoading = activeQuery.isLoading;
+
+  const openContextMenu = (book: Book, x: number, y: number) => {
+    setContextMenu({ book, x, y });
+  };
+
+  const runImport = async (filePaths: string[]) => {
+    if (filePaths.length === 0) {
+      return;
+    }
+
+    setImportInProgress(true);
+
+    try {
+      const result = await importBooksMutation.mutateAsync(filePaths);
+
+      if (result.duplicates.length > 0) {
+        setDuplicateTitles(result.duplicates.map((duplicate) => duplicate.title));
+      }
+
+      if (result.errors.length > 0) {
+        const firstError = result.errors[0];
+        window.alert(
+          `'${firstError.filename}' could not be imported. The file may be corrupted or is not a valid ePub.`,
+        );
+      }
+    } finally {
+      setImportInProgress(false);
+      setDropZoneVisible(false);
+    }
+  };
+
+  const handleOpenBook = async (bookId: string) => {
+    try {
+      await openReaderWindow(bookId);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "This book's managed library file is missing or corrupted. Re-import the book to read it again.";
+      window.alert(message);
+    }
+  };
+
+  const deleteTargetBook = contextMenu?.book ?? null;
+
+  const subtitle = useMemo(() => {
+    if (isSearchActive) {
+      return null;
+    }
+
+    return section === "recent"
+      ? "Books opened in the last 30 days."
+      : `${allBooksQuery.data?.length ?? 0} books in your library.`;
+  }, [allBooksQuery.data?.length, isSearchActive, section]);
+
   return (
     <main className="min-h-screen bg-[--color-bg-window] text-[--color-text-primary]">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-[210px] shrink-0 border-r border-[--color-border] bg-[--color-bg-sidebar] px-4 py-6 lg:block">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <p className="text-[28px] font-bold tracking-tight text-[--color-text-primary]">
-                Library
-              </p>
-              <div className="rounded-full border border-[--color-border] bg-[--color-bg-elevated] px-4 py-2 text-sm text-[--color-text-muted]">
-                Search your books
-              </div>
-            </div>
+      <DuplicateBanner titles={duplicateTitles} onDismiss={clearDuplicateTitles} />
+      <DropZone onFiles={runImport} onVisibilityChange={setDropZoneVisible} />
 
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[--color-text-section]">
-                Library
-              </p>
-              <SidebarRow label="All" count={12} active />
-              <SidebarRow label="Recently Read" count={4} />
-            </div>
+      {dropZoneVisible ? (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-black/50 px-6">
+          <div className="rounded-[20px] border border-dashed border-[--color-primary] bg-[--color-bg-surface]/95 px-10 py-8 text-center shadow-popup">
+            <p className="text-lg font-medium text-[--color-text-primary]">Drop .epub files here</p>
+            <p className="mt-2 text-sm text-[--color-text-muted]">
+              Folio will import them into its managed library.
+            </p>
           </div>
-        </aside>
+        </div>
+      ) : null}
+
+      <div className="flex min-h-screen">
+        <Sidebar
+          activeSection={section}
+          allCount={allBooksQuery.data?.length ?? 0}
+          recentCount={recentBooksQuery.data?.length ?? 0}
+          onSectionChange={setSection}
+        />
 
         <section className="flex min-h-screen flex-1 flex-col bg-[--color-bg-content]">
-          <header className="flex items-center justify-between border-b border-[--color-border] px-6 py-5">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[--color-text-section]">
-                Library
-              </p>
-              <h1 className="mt-1 text-[28px] font-bold tracking-tight">All</h1>
-            </div>
-
-            <button
-              type="button"
-              className="inline-flex items-center rounded-full bg-[--color-primary] px-4 py-2 text-sm font-medium text-white transition hover:brightness-90"
-            >
-              Import Book +
-            </button>
-          </header>
+          <LibraryToolbar
+            isImporting={importInProgress || importBooksMutation.isPending}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onClearSearch={clearSearch}
+            onImportPaths={runImport}
+            onImportPickerError={(message) => window.alert(message)}
+          />
 
           <div className="flex-1 px-6 py-8">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-10 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {Array.from({ length: SHELL_BOOK_COUNT }, (_, index) => (
-                <ShellBookCard key={index} index={index} />
-              ))}
+            <div className="mx-auto max-w-[1504px]">
+              <div className="mb-8">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[--color-text-section]">
+                  Library
+                </p>
+                <h1 className="mt-1 text-[28px] font-bold tracking-tight text-[--color-text-primary]">
+                  {heading}
+                </h1>
+                {subtitle ? (
+                  <p className="mt-2 text-sm text-[--color-text-muted]">{subtitle}</p>
+                ) : null}
+              </div>
+
+              {activeQuery.error ? (
+                <InlineError
+                  message="Failed to load the library."
+                  onRetry={() => void activeQuery.refetch()}
+                />
+              ) : isLibraryEmpty && !isSearchActive ? (
+                <EmptyState onImportClick={() => document.querySelector<HTMLInputElement>('input[type=\"file\"]')?.click()} />
+              ) : hasSearchNoResults ? (
+                <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
+                  <p className="text-lg text-[--color-text-primary]">
+                    No books match &quot;{debouncedQuery}&quot;.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="mt-3 text-sm text-[--color-primary] underline underline-offset-4"
+                  >
+                    Clear Search
+                  </button>
+                </div>
+              ) : (
+                <BookGrid
+                  books={filteredBooks}
+                  isLoading={isGridLoading}
+                  onOpen={handleOpenBook}
+                  onContextMenu={openContextMenu}
+                />
+              )}
             </div>
           </div>
         </section>
       </div>
+
+      <BookContextMenu
+        open={Boolean(contextMenu)}
+        position={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
+        onDismiss={() => setContextMenu(null)}
+        onOpenBook={() => {
+          if (contextMenu) {
+            void handleOpenBook(contextMenu.book.id);
+          }
+        }}
+        onShowInfo={() => {
+          if (contextMenu) {
+            setBookInfoId(contextMenu.book.id);
+            setBookInfoOpen(true);
+          }
+        }}
+        onRemoveBook={() => {
+          if (!deleteTargetBook) {
+            return;
+          }
+
+          const confirmed = window.confirm(
+            `Remove '${deleteTargetBook.title}' from your library?`,
+          );
+
+          if (!confirmed) {
+            return;
+          }
+
+          void deleteBookMutation
+            .mutateAsync(deleteTargetBook.id)
+            .catch((error) => {
+              const message =
+                error instanceof Error ? error.message : "Failed to remove the book.";
+              window.alert(message);
+            });
+        }}
+      />
+
+      <BookInfoSheet
+        bookId={bookInfoId}
+        open={bookInfoOpen}
+        onOpenChange={(open) => {
+          setBookInfoOpen(open);
+          if (!open) {
+            setBookInfoId(null);
+          }
+        }}
+      />
     </main>
   );
 }

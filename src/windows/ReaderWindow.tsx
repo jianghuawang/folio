@@ -1,30 +1,39 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-function ReaderColumn() {
-  return (
-    <div className="space-y-4">
-      {Array.from({ length: 7 }, (_, index) => (
-        <div
-          key={index}
-          className={[
-            "h-3 rounded-full bg-white/10",
-            index % 4 === 0 ? "w-11/12" : "",
-            index % 4 === 1 ? "w-full" : "",
-            index % 4 === 2 ? "w-10/12" : "",
-            index % 4 === 3 ? "w-9/12" : "",
-          ].join(" ")}
-        />
-      ))}
-    </div>
-  );
-}
+import { EpubViewer } from "@/components/reader/EpubViewer";
+import { PageChevrons } from "@/components/reader/PageChevrons";
+import { ProgressBar } from "@/components/reader/ProgressBar";
+import { ReaderToolbar } from "@/components/reader/ReaderToolbar";
+import { TocDrawer } from "@/components/reader/TocDrawer";
+import { useBook } from "@/hooks/useBook";
+import type {
+  EpubBridge,
+  ReaderLocationState,
+  ReaderTocItem,
+} from "@/lib/epub-bridge";
 
-function ReaderShellError({ message }: { message: string }) {
+function FullScreenError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[--color-bg-window] px-6 text-[--color-text-primary]">
       <div className="w-full max-w-md rounded-2xl border border-[--color-border-strong] bg-[--color-bg-surface] p-6 text-center shadow-popup">
-        <p className="text-sm font-medium text-[--color-destructive]">Unable to open reader shell.</p>
+        <p className="text-sm font-medium text-[--color-destructive]">Unable to open reader.</p>
         <p className="mt-2 text-sm text-[--color-text-secondary]">{message}</p>
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-4 text-sm text-[--color-primary] underline underline-offset-4"
+          >
+            Retry
+          </button>
+        ) : null}
       </div>
     </main>
   );
@@ -33,42 +42,162 @@ function ReaderShellError({ message }: { message: string }) {
 export default function ReaderWindow() {
   const [searchParams] = useSearchParams();
   const bookId = searchParams.get("bookId");
+  const { data: book, error, isLoading, refetch } = useBook(bookId);
+  const [bridge, setBridge] = useState<EpubBridge | null>(null);
+  const [tocItems, setTocItems] = useState<ReaderTocItem[]>([]);
+  const [location, setLocation] = useState<ReaderLocationState>({
+    atEnd: false,
+    atStart: true,
+    cfi: "",
+    chapterTitle: "Chapter Title",
+    href: "",
+    progress: 0,
+  });
+  const [tocOpen, setTocOpen] = useState(false);
+  const [toolbarVisible, setToolbarVisible] = useState(true);
+  const toolbarTimeoutRef = useRef<number | null>(null);
+
+  const showToolbar = useCallback(() => {
+    setToolbarVisible(true);
+
+    if (toolbarTimeoutRef.current) {
+      window.clearTimeout(toolbarTimeoutRef.current);
+    }
+
+    toolbarTimeoutRef.current = window.setTimeout(() => {
+      setToolbarVisible(false);
+    }, 2000);
+  }, []);
+
+  useEffect(() => {
+    showToolbar();
+
+    return () => {
+      if (toolbarTimeoutRef.current) {
+        window.clearTimeout(toolbarTimeoutRef.current);
+      }
+    };
+  }, [showToolbar]);
+
+  useEffect(() => {
+    if (!bridge) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        void bridge.prev();
+        showToolbar();
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        void bridge.next();
+        showToolbar();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [bridge, showToolbar]);
+
+  useEffect(() => {
+    setBridge(null);
+    setTocItems([]);
+    setLocation({
+      atEnd: false,
+      atStart: true,
+      cfi: "",
+      chapterTitle: "Chapter Title",
+      href: "",
+      progress: 0,
+    });
+    setTocOpen(false);
+  }, [book?.id]);
+
+  const handleBridgeReady = useCallback((readyBridge: EpubBridge, readyToc: ReaderTocItem[]) => {
+    setBridge(readyBridge);
+    setTocItems(readyToc);
+  }, []);
+
+  const handleLocationChange = useCallback((nextLocation: ReaderLocationState) => {
+    setLocation(nextLocation);
+  }, []);
 
   if (!bookId) {
-    return <ReaderShellError message="Missing required ?bookId query parameter." />;
+    return <FullScreenError message="Missing required ?bookId query parameter." />;
+  }
+
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[--color-bg-window] px-6 text-[--color-text-primary]">
+        <div className="text-sm text-[--color-text-secondary]">Opening book…</div>
+      </main>
+    );
+  }
+
+  if (error || !book) {
+    return (
+      <FullScreenError
+        message={error instanceof Error ? error.message : "This book could not be loaded."}
+        onRetry={() => void refetch()}
+      />
+    );
   }
 
   return (
-    <main className="min-h-screen bg-[--color-bg-window] text-[--color-text-primary]">
-      <div className="flex min-h-screen flex-col">
-        <header className="border-b border-[--color-border] px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 text-sm text-[--color-text-secondary]">
-              <span>TOC</span>
-              <span>Theme</span>
-              <span>Annot</span>
-            </div>
-            <div className="truncate text-center text-[13px] font-light text-[--color-text-secondary]">
-              Reader Shell · {bookId}
-            </div>
-            <div className="flex items-center gap-3 text-sm text-[--color-text-secondary]">
-              <span>AA</span>
-              <span>Search</span>
-              <span>Translate</span>
-            </div>
-          </div>
-        </header>
+    <main
+      className="h-screen overflow-hidden bg-[--color-bg-window] text-[--color-text-primary]"
+      onMouseMove={showToolbar}
+      onClick={showToolbar}
+    >
+      <div className="group relative h-full w-full">
+        <ReaderToolbar
+          title={book.title}
+          visible={toolbarVisible || tocOpen}
+          onToggleToc={() => {
+            setTocOpen((current) => !current);
+            showToolbar();
+          }}
+        />
 
-        <section className="flex flex-1 items-center justify-center px-10 py-8 md:px-20">
-          <div className="grid w-full max-w-6xl gap-12 md:grid-cols-2">
-            <ReaderColumn />
-            <ReaderColumn />
-          </div>
-        </section>
+        <div className="h-full px-0 py-0">
+          <EpubViewer
+            book={book}
+            onBridgeReady={handleBridgeReady}
+            onLocationChange={handleLocationChange}
+          />
+        </div>
 
-        <footer className="border-t border-[--color-border] px-6 py-3 text-center text-sm text-[--color-text-muted]">
-          Chapter Title · 0%
-        </footer>
+        <PageChevrons
+          disabled={!bridge}
+          onPrev={() => {
+            void bridge?.prev();
+            showToolbar();
+          }}
+          onNext={() => {
+            void bridge?.next();
+            showToolbar();
+          }}
+        />
+
+        <ProgressBar chapterTitle={location.chapterTitle} progress={location.progress} />
+
+        <TocDrawer
+          currentHref={location.href}
+          items={tocItems}
+          open={tocOpen}
+          onOpenChange={setTocOpen}
+          onSelect={(href) => {
+            void bridge?.goToHref(href);
+            setTocOpen(false);
+            showToolbar();
+          }}
+        />
       </div>
     </main>
   );
