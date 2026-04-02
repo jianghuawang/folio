@@ -36,16 +36,16 @@
 
 | Layer | Choice | Version | Reason |
 |---|---|---|---|
-| Desktop Framework | Tauri | 2.1 | macOS-only requirement; smallest bundle size; IPC to Rust for security-sensitive ops |
-| Database Driver | rusqlite | 0.32 | Embedded SQLite; no external DB process; all data local per PRD |
+| Desktop Framework | Tauri | 2.10 | macOS-only requirement; smallest bundle size; IPC to Rust for security-sensitive ops |
+| Database Driver | rusqlite | 0.31 | Embedded SQLite; no external DB process; all data local per PRD |
 | Migrations | rusqlite_migration | 1.2 | Lightweight migration runner; runs on startup before any DB access |
 | HTTP Client (LLM) | reqwest | 0.12 | Async HTTP with TLS; OpenRouter calls stay in Rust so the API key never touches the renderer |
 | Async Runtime | tokio | 1.40 | Required by reqwest and Tauri's async command system |
 | Serialization | serde + serde_json | 1.0 | Tauri's IPC serialization layer requires Serialize/Deserialize on all payload types |
 | Hashing | sha2 | 0.10 | SHA-256 file hash for duplicate detection and paragraph_hash for translations |
-| ZIP / ePub Assembly | zip | 2.2 | ePub is a ZIP archive; used for bilingual ePub export (A8) |
+| ZIP / ePub Assembly | zip | 2.3 | ePub is a ZIP archive; used for bilingual ePub export (A8) |
 | Keychain | keyring | 3.3 | macOS Keychain read/write; wraps `security-framework` under the hood |
-| ePub Metadata Parse | minidom + quick-xml | 0.4 / 0.36 | Parse OPF/NCX/Nav documents to extract title, author, cover on import |
+| ePub Metadata Parse | minidom + quick-xml | 0.15 / 0.36 | Parse OPF/NCX/Nav documents to extract title, author, cover on import |
 
 ### Database
 
@@ -1010,7 +1010,7 @@ OpenRouter returns model-generated HTML fragments. If these are inserted directl
 
 ### Tauri
 - **Used for:** Desktop app shell, native window management, IPC, file system access, macOS menu bar, dialog boxes
-- **Version:** `tauri = "2.1"` (backend), `@tauri-apps/api@2.x` (frontend)
+- **Version:** `tauri = "2.10"` (backend), `@tauri-apps/api = "2.10"` (frontend)
 - **Env vars:** None at runtime. Build env: `TAURI_SIGNING_PRIVATE_KEY` for code signing.
 - **Reference docs:** https://v2.tauri.app/reference/
 

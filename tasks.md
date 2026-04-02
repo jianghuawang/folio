@@ -31,7 +31,7 @@
 
 ---
 ## Task 1: Project Bootstrap & Locked Stack Configuration
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 Create the buildable frontend/backend application skeleton with the locked stack, repo-level config, and no feature logic.
@@ -86,7 +86,7 @@ Do NOT touch:
 None. PRD.md Section 2.1 and TECH_DESIGN.md Section 1 both explicitly confirm there is no auth surface in MVP.
 ---
 ## Task 2: SQLite Schema, Migrations & AppState
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 Produce the SQLite schema, migration runner, and Rust app-state container that all later backend tasks depend on.
@@ -133,7 +133,7 @@ Do NOT touch:
 None identified between PRD.md and TECH_DESIGN.md for the persisted MVP schema.
 ---
 ## Task 3: Multi-Window Routing & Native Shell Skeleton
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 Create the empty Library, Reader, and Settings window shells plus the native menu/window scaffolding around them.
@@ -182,7 +182,7 @@ Do NOT touch:
 PRD.md Section 5b shows the reader toolbar with controls that are later marked out of scope or moved to V2 elsewhere in the PRD; keep this task limited to structural shells and defer control conflicts to the reader-feature tasks.
 ---
 ## Task 4: Design Tokens & Base UI Foundation
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 Define the shared visual tokens, Tailwind theme hooks, and generated UI primitives used by all later page work.
@@ -228,10 +228,10 @@ Do NOT touch:
 - Blocks: Task 5 (reason: backend and frontend feature work now have the shared visual/styling foundation)
 
 ### ⚠️ Risks & Conflicts
-None identified between PRD.md and TECH_DESIGN.md for the shared MVP visual system.
+Resolved by human review: use `#2C2C2E` for the reader Dark theme background.
 ---
 ## Task 5: Books Backend Commands & Import Pipeline
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 Implement the managed-library books backend surface for import, list, detail, and deletion behavior.

@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+
+    --background: 240 2% 9%;
+    --foreground: 0 0% 100%;
+    --card: 240 2% 18%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 2% 18%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 210 100% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 3% 23%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 3% 23%;
+    --muted-foreground: 240 5% 56%;
+    --accent: 240 3% 23%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 4 100% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 100% / 0.08;
+    --input: 0 0% 100% / 0.15;
+    --ring: 210 100% 52%;
+    --radius: 12px;
+
+    --color-bg-window: #161618;
+    --color-bg-sidebar: #1c1c1e;
+    --color-bg-content: #1c1c1e;
+    --color-bg-surface: #2c2c2e;
+    --color-bg-elevated: #3a3a3c;
+
+    --color-text-primary: #ffffff;
+    --color-text-secondary: rgba(235, 235, 245, 0.8);
+    --color-text-muted: #8e8e93;
+    --color-text-section: #636366;
+
+    --color-primary: #0a84ff;
+    --color-primary-hover: #0a7ae0;
+    --color-destructive: #ff453a;
+    --color-success: #30d158;
+
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.15);
+
+    --color-sidebar-active-bg: rgba(255, 255, 255, 0.1);
+    --color-sidebar-active-text: #ffffff;
+
+    --color-hl-yellow: #ffd60a;
+    --color-hl-green: #30d158;
+    --color-hl-blue: #0a84ff;
+    --color-hl-pink: #ff375f;
+    --color-hl-purple: #bf5af2;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+}
