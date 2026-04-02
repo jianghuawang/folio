@@ -397,7 +397,7 @@ Do NOT touch:
 
 ## Task 7: Annotations Backend Commands
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -455,7 +455,7 @@ Do NOT touch:
 
 ## Task 8: Settings Backend Commands & Keychain
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -514,7 +514,7 @@ Do NOT touch:
 
 ## Task 9: Translation Backend Worker & IPC
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -576,7 +576,7 @@ Do NOT touch:
 
 ## Task 10: Bilingual Export Backend
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 

@@ -44,11 +44,13 @@ pub fn get_highlights(
         )
         .map_err(|error| error.to_string())?;
 
-    statement
+    let highlights = statement
         .query_map(params![book_id], highlight_from_row)
         .map_err(|error| error.to_string())?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    Ok(highlights)
 }
 
 #[tauri::command]

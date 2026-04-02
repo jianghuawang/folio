@@ -63,11 +63,11 @@ export function EpubViewer({ book, onBridgeReady, onLocationChange }: EpubViewer
   }, [book, onBridgeReady, onLocationChange]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-white">
+    <div className="relative h-full w-full overflow-hidden bg-white pt-[128px] pb-[52px]">
       <div ref={containerRef} id="epub-container" className="h-full w-full" />
 
       {isLoading ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-white">
+        <div className="absolute inset-x-0 bottom-[52px] top-[128px] flex items-center justify-center bg-white">
           <div className="flex items-center gap-3 text-sm text-[--color-text-muted]">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span>Opening book…</span>

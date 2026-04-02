@@ -1,6 +1,8 @@
 mod commands;
 mod db;
 mod epub;
+mod keychain;
+mod llm;
 
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -164,6 +166,9 @@ pub fn run() {
         })
         .setup(|app| {
             let app_state = db::init_app_state(app.handle())?;
+            commands::translations::normalize_in_progress_jobs(&app_state).map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::Other, error)
+            })?;
             app.manage(app_state);
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
@@ -181,7 +186,29 @@ pub fn run() {
             commands::reader::open_reader_window,
             commands::reader::save_reading_position,
             commands::reader::get_reading_settings,
-            commands::reader::update_reading_settings
+            commands::reader::update_reading_settings,
+            commands::highlights::get_highlights,
+            commands::highlights::add_highlight,
+            commands::highlights::update_highlight,
+            commands::highlights::delete_highlight,
+            commands::notes::get_notes,
+            commands::notes::save_note,
+            commands::notes::update_note,
+            commands::notes::delete_note,
+            commands::settings::get_app_settings,
+            commands::settings::save_app_settings,
+            commands::settings::save_api_key,
+            commands::settings::has_api_key,
+            commands::settings::clear_api_key,
+            commands::settings::test_openrouter_connection,
+            commands::translations::start_translation,
+            commands::translations::pause_translation,
+            commands::translations::resume_translation,
+            commands::translations::cancel_translation,
+            commands::translations::get_translations,
+            commands::translations::get_translation_job,
+            commands::translations::retry_failed_paragraphs,
+            commands::export::export_bilingual_epub
         ])
         .run(tauri::generate_context!())
         .expect("error while running Folio");

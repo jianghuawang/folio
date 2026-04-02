@@ -19,6 +19,12 @@ export interface AppSettings {
   llm_model: string;
 }
 
+export interface ApiKeyStatus {
+  configured: boolean;
+}
+
+export type ConnectionTestResult = { success: true } | { success: false; error: string };
+
 export interface WindowState {
   x: number;
   y: number;
