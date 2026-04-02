@@ -50,7 +50,7 @@ export async function invokeTauri<ReturnType>(
 
 export async function importBooks(filePaths: string[]): Promise<ImportBookResult> {
   try {
-    return await invokeTauri<ImportBookResult>("import_book", { file_paths: filePaths });
+    return await invokeTauri<ImportBookResult>("import_book", { filePaths });
   } catch (error) {
     if (error instanceof FolioError) {
       throw error;
@@ -74,7 +74,7 @@ export async function getBooks(filter: LibraryFilter): Promise<Book[]> {
 
 export async function getBook(bookId: string): Promise<Book> {
   try {
-    return await invokeTauri<Book>("get_book", { book_id: bookId });
+    return await invokeTauri<Book>("get_book", { bookId });
   } catch (error) {
     if (error instanceof FolioError) {
       throw error;
@@ -86,7 +86,7 @@ export async function getBook(bookId: string): Promise<Book> {
 
 export async function deleteBook(bookId: string): Promise<void> {
   try {
-    await invokeTauri<void>("delete_book", { book_id: bookId });
+    await invokeTauri<void>("delete_book", { bookId });
   } catch (error) {
     if (error instanceof FolioError) {
       throw error;
@@ -98,7 +98,7 @@ export async function deleteBook(bookId: string): Promise<void> {
 
 export async function openReaderWindow(bookId: string): Promise<void> {
   try {
-    await invokeTauri<void>("open_reader_window", { book_id: bookId });
+    await invokeTauri<void>("open_reader_window", { bookId });
   } catch (error) {
     if (error instanceof FolioError) {
       throw error;
@@ -118,7 +118,7 @@ export async function saveReadingPosition(
 ): Promise<void> {
   try {
     await invokeTauri<void>("save_reading_position", {
-      book_id: bookId,
+      bookId,
       cfi,
       progress,
     });
@@ -137,7 +137,7 @@ export async function saveReadingPosition(
 export async function getReadingSettings(bookId: string): Promise<ReadingSettings> {
   try {
     return await invokeTauri<ReadingSettings>("get_reading_settings", {
-      book_id: bookId,
+      bookId,
     });
   } catch (error) {
     if (error instanceof FolioError) {
@@ -157,7 +157,7 @@ export async function updateReadingSettings(
 ): Promise<ReadingSettings> {
   try {
     return await invokeTauri<ReadingSettings>("update_reading_settings", {
-      book_id: bookId,
+      bookId,
       settings,
     });
   } catch (error) {

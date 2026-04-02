@@ -1,4 +1,11 @@
-import { BookOpenText, Bookmark, Globe, Type } from "lucide-react";
+import {
+  BookMarked,
+  Bookmark,
+  Globe,
+  LayoutPanelLeft,
+  Palette,
+  Type,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -24,14 +31,14 @@ function ToolbarIconButton({
     <Button
       type="button"
       variant="ghost"
-      size="sm"
+      size="icon"
       disabled={disabled}
       onClick={onClick}
-      className="h-9 rounded-full px-3 text-[--color-text-secondary] hover:bg-white/10 hover:text-[--color-text-primary]"
+      className="h-9 w-9 rounded-full text-[--color-text-secondary] disabled:opacity-100 hover:bg-white/10 hover:text-[--color-text-primary]"
       aria-label={label}
+      title={label}
     >
       {icon}
-      <span className="hidden min-[700px]:inline">{label}</span>
     </Button>
   );
 }
@@ -40,24 +47,41 @@ export function ReaderToolbar({ title, visible, onToggleToc }: ReaderToolbarProp
   return (
     <div
       className={[
-        "pointer-events-none absolute inset-x-0 top-0 z-20 px-4 pt-4 transition-opacity duration-200 ease-out",
-        visible ? "opacity-100" : "opacity-0",
+        "relative z-20 flex h-14 shrink-0 items-center justify-between border-b border-[--color-border] bg-[--color-bg-window] px-4 sm:px-6",
       ].join(" ")}
     >
-      <div className="pointer-events-auto mx-auto flex max-w-[1200px] items-center justify-between gap-4 rounded-full border border-[--color-border] bg-[--color-bg-surface]/90 px-3 py-2 shadow-popup backdrop-blur">
-        <div className="flex items-center gap-2">
+      <div
+        className={[
+          "flex items-center gap-3 transition-opacity duration-200 ease-out",
+          visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        ].join(" ")}
+      >
+        <div className="flex items-center rounded-full border border-[--color-border] bg-white/[0.04] p-1 shadow-sm">
           <ToolbarIconButton
-            icon={<BookOpenText className="h-4 w-4" />}
+            icon={<LayoutPanelLeft className="h-4 w-4" />}
             label="TOC"
             onClick={onToggleToc}
           />
+          <ToolbarIconButton disabled icon={<Palette className="h-4 w-4" />} label="Theme" />
+          <ToolbarIconButton
+            disabled
+            icon={<BookMarked className="h-4 w-4" />}
+            label="Annotations"
+          />
         </div>
+      </div>
 
-        <div className="truncate px-4 text-center text-[13px] font-light text-[--color-text-secondary]">
-          {title}
-        </div>
+      <div className="absolute left-1/2 -translate-x-1/2 px-4 text-center text-[13px] font-light tracking-[0.01em] text-[--color-text-muted]">
+        {title}
+      </div>
 
-        <div className="flex items-center gap-2">
+      <div
+        className={[
+          "flex items-center gap-3 transition-opacity duration-200 ease-out",
+          visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        ].join(" ")}
+      >
+        <div className="flex items-center rounded-full border border-[--color-border] bg-white/[0.04] p-1 shadow-sm">
           <ToolbarIconButton disabled icon={<Type className="h-4 w-4" />} label="Aa" />
           <ToolbarIconButton disabled icon={<Globe className="h-4 w-4" />} label="Translate" />
           <ToolbarIconButton disabled icon={<Bookmark className="h-4 w-4" />} label="Notes" />

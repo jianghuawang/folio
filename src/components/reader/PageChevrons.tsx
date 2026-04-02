@@ -11,6 +11,22 @@ interface PageChevronsProps {
 export function PageChevrons({ disabled = false, onNext, onPrev }: PageChevronsProps) {
   return (
     <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onPrev}
+        className="absolute inset-y-0 left-0 z-10 w-1/4 cursor-pointer bg-transparent disabled:cursor-not-allowed"
+        aria-label="Previous page area"
+      />
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onNext}
+        className="absolute inset-y-0 right-0 z-10 w-1/4 cursor-pointer bg-transparent disabled:cursor-not-allowed"
+        aria-label="Next page area"
+      />
+
       <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-3">
         <Button
           type="button"
@@ -18,7 +34,7 @@ export function PageChevrons({ disabled = false, onNext, onPrev }: PageChevronsP
           size="icon"
           disabled={disabled}
           onClick={onPrev}
-          className="pointer-events-auto h-10 w-10 rounded-full bg-[--color-bg-surface]/85 text-[--color-text-primary] opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[--color-bg-elevated]"
+          className="pointer-events-auto h-10 w-10 rounded-full bg-[--color-bg-surface] text-[--color-text-primary] opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[--color-bg-elevated]"
           aria-label="Previous page"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -32,7 +48,7 @@ export function PageChevrons({ disabled = false, onNext, onPrev }: PageChevronsP
           size="icon"
           disabled={disabled}
           onClick={onNext}
-          className="pointer-events-auto h-10 w-10 rounded-full bg-[--color-bg-surface]/85 text-[--color-text-primary] opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[--color-bg-elevated]"
+          className="pointer-events-auto h-10 w-10 rounded-full bg-[--color-bg-surface] text-[--color-text-primary] opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[--color-bg-elevated]"
           aria-label="Next page"
         >
           <ChevronRight className="h-5 w-5" />

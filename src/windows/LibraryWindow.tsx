@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { message, open } from "@tauri-apps/plugin-dialog";
 
 import { BookContextMenu } from "@/components/library/BookContextMenu";
 import { BookGrid } from "@/components/library/BookGrid";
@@ -82,6 +83,58 @@ export default function LibraryWindow() {
     setContextMenu({ book, x, y });
   };
 
+  const showImportMessage = async (content: string) => {
+    try {
+      await message(content, {
+        title: "Folio",
+        kind: "error",
+      });
+    } catch {
+      window.alert(content);
+    }
+  };
+
+  const normalizeDialogSelection = (selection: unknown): string[] => {
+    if (Array.isArray(selection)) {
+      return selection.filter((value): value is string => typeof value === "string");
+    }
+
+    if (typeof selection === "string") {
+      return [selection];
+    }
+
+    return [];
+  };
+
+  const handleImportClick = async () => {
+    try {
+      const selection = await open({
+        multiple: true,
+        directory: false,
+        fileAccessMode: "copy",
+        title: "Import Book",
+        filters: [
+          {
+            name: "ePub Books",
+            extensions: ["epub"],
+          },
+        ],
+      });
+
+      const filePaths = normalizeDialogSelection(selection);
+
+      if (filePaths.length > 0) {
+        await runImport(filePaths);
+      } else if (selection !== null) {
+        await showImportMessage("The selected files could not be read by Folio.");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to open the import dialog.";
+      await showImportMessage(message);
+    }
+  };
+
   const runImport = async (filePaths: string[]) => {
     if (filePaths.length === 0) {
       return;
@@ -98,10 +151,14 @@ export default function LibraryWindow() {
 
       if (result.errors.length > 0) {
         const firstError = result.errors[0];
-        window.alert(
+        await showImportMessage(
           `'${firstError.filename}' could not be imported. The file may be corrupted or is not a valid ePub.`,
         );
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to import the selected book.";
+      await showImportMessage(message);
     } finally {
       setImportInProgress(false);
       setDropZoneVisible(false);
@@ -116,7 +173,7 @@ export default function LibraryWindow() {
         error instanceof Error
           ? error.message
           : "This book's managed library file is missing or corrupted. Re-import the book to read it again.";
-      window.alert(message);
+      void showImportMessage(message);
     }
   };
 
@@ -162,8 +219,7 @@ export default function LibraryWindow() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             onClearSearch={clearSearch}
-            onImportPaths={runImport}
-            onImportPickerError={(message) => window.alert(message)}
+            onImportClick={() => void handleImportClick()}
           />
 
           <div className="flex-1 px-6 py-8">
@@ -186,7 +242,7 @@ export default function LibraryWindow() {
                   onRetry={() => void activeQuery.refetch()}
                 />
               ) : isLibraryEmpty && !isSearchActive ? (
-                <EmptyState onImportClick={() => document.querySelector<HTMLInputElement>('input[type=\"file\"]')?.click()} />
+                <EmptyState onImportClick={() => void handleImportClick()} />
               ) : hasSearchNoResults ? (
                 <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
                   <p className="text-lg text-[--color-text-primary]">
@@ -246,7 +302,7 @@ export default function LibraryWindow() {
             .catch((error) => {
               const message =
                 error instanceof Error ? error.message : "Failed to remove the book.";
-              window.alert(message);
+              void showImportMessage(message);
             });
         }}
       />

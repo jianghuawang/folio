@@ -7,6 +7,7 @@ import { ProgressBar } from "@/components/reader/ProgressBar";
 import { ReaderToolbar } from "@/components/reader/ReaderToolbar";
 import { TocDrawer } from "@/components/reader/TocDrawer";
 import { useBook } from "@/hooks/useBook";
+import { saveReadingPosition } from "@/lib/tauri-commands";
 import type {
   EpubBridge,
   ReaderLocationState,
@@ -56,6 +57,7 @@ export default function ReaderWindow() {
   const [tocOpen, setTocOpen] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(true);
   const toolbarTimeoutRef = useRef<number | null>(null);
+  const saveTimeoutRef = useRef<number | null>(null);
 
   const showToolbar = useCallback(() => {
     setToolbarVisible(true);
@@ -75,6 +77,10 @@ export default function ReaderWindow() {
     return () => {
       if (toolbarTimeoutRef.current) {
         window.clearTimeout(toolbarTimeoutRef.current);
+      }
+
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
       }
     };
   }, [showToolbar]);
@@ -119,6 +125,26 @@ export default function ReaderWindow() {
     setTocOpen(false);
   }, [book?.id]);
 
+  useEffect(() => {
+    if (!book || !location.cfi) {
+      return undefined;
+    }
+
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      void saveReadingPosition(book.id, location.cfi, location.progress).catch(() => undefined);
+    }, 2000);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [book, location.cfi, location.progress]);
+
   const handleBridgeReady = useCallback((readyBridge: EpubBridge, readyToc: ReaderTocItem[]) => {
     setBridge(readyBridge);
     setTocItems(readyToc);
@@ -151,28 +177,25 @@ export default function ReaderWindow() {
 
   return (
     <main
-      className="h-screen overflow-hidden bg-[--color-bg-window] text-[--color-text-primary]"
+      className="flex h-screen flex-col overflow-hidden bg-[--color-bg-window] text-[--color-text-primary]"
       onMouseMove={showToolbar}
       onClick={showToolbar}
     >
-      <div className="group relative h-full w-full">
-        <ReaderToolbar
-          title={book.title}
-          visible={toolbarVisible || tocOpen}
-          onToggleToc={() => {
-            setTocOpen((current) => !current);
-            showToolbar();
-          }}
+      <ReaderToolbar
+        title={book.title}
+        visible={toolbarVisible || tocOpen}
+        onToggleToc={() => {
+          setTocOpen((current) => !current);
+          showToolbar();
+        }}
+      />
+
+      <div className="group relative flex-1 overflow-hidden">
+        <EpubViewer
+          book={book}
+          onBridgeReady={handleBridgeReady}
+          onLocationChange={handleLocationChange}
         />
-
-        <div className="h-full px-0 py-0">
-          <EpubViewer
-            book={book}
-            onBridgeReady={handleBridgeReady}
-            onLocationChange={handleLocationChange}
-          />
-        </div>
-
         <PageChevrons
           disabled={!bridge}
           onPrev={() => {
@@ -184,8 +207,6 @@ export default function ReaderWindow() {
             showToolbar();
           }}
         />
-
-        <ProgressBar chapterTitle={location.chapterTitle} progress={location.progress} />
 
         <TocDrawer
           currentHref={location.href}
@@ -199,6 +220,8 @@ export default function ReaderWindow() {
           }}
         />
       </div>
+
+      <ProgressBar chapterTitle={location.chapterTitle} progress={location.progress} />
     </main>
   );
 }

@@ -68,7 +68,7 @@ export function EpubViewer({ book, onBridgeReady, onLocationChange }: EpubViewer
 
       {isLoading ? (
         <div className="absolute inset-0 flex items-center justify-center bg-white">
-          <div className="flex items-center gap-3 text-sm text-[#6e6e73]">
+          <div className="flex items-center gap-3 text-sm text-[--color-text-muted]">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span>Opening book…</span>
           </div>
@@ -76,10 +76,10 @@ export function EpubViewer({ book, onBridgeReady, onLocationChange }: EpubViewer
       ) : null}
 
       {error ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-white px-6">
-          <div className="w-full max-w-md rounded-2xl border border-[#d1d1d6] bg-white p-6 text-center shadow-sm">
-            <p className="text-sm font-medium text-[#ff453a]">Unable to open this book.</p>
-            <p className="mt-2 text-sm text-[#6e6e73]">{error}</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-[--color-bg-window] px-6">
+          <div className="w-full max-w-md rounded-2xl border border-[--color-border-strong] bg-[--color-bg-surface] p-6 text-center shadow-popup">
+            <p className="text-sm font-medium text-[--color-destructive]">Unable to open this book.</p>
+            <p className="mt-2 text-sm text-[--color-text-secondary]">{error}</p>
           </div>
         </div>
       ) : null}

@@ -44,7 +44,9 @@ export function DropZone({ onFiles, onVisibilityChange }: DropZoneProps) {
 
     return () => {
       disposed = true;
-      void unlistenPromise?.then((unlisten) => unlisten?.());
+      void unlistenPromise
+        ?.then((unlisten) => unlisten?.())
+        .catch(() => undefined);
     };
   }, [onFiles, onVisibilityChange]);
 

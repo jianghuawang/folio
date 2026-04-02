@@ -7,7 +7,7 @@ interface ProgressBarProps {
 
 export function ProgressBar({ chapterTitle, progress }: ProgressBarProps) {
   return (
-    <div className="absolute inset-x-0 bottom-0 z-10 border-t border-[--color-border] bg-[--color-bg-surface]/90 px-6 py-3 text-center text-sm text-[--color-text-muted] backdrop-blur">
+    <div className="flex h-11 shrink-0 items-center justify-center border-t border-[--color-border] bg-[--color-bg-window] px-6 text-center text-[13px] text-[--color-text-muted]">
       {chapterTitle} · {formatPercent(progress)}
     </div>
   );

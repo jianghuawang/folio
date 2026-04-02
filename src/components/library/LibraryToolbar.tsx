@@ -1,12 +1,7 @@
 import { Loader2, Search, X } from "lucide-react";
-import { useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-interface FileWithPath extends File {
-  path?: string;
-}
 
 interface LibraryToolbarProps {
   importLabel?: string;
@@ -14,8 +9,7 @@ interface LibraryToolbarProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
   onClearSearch: () => void;
-  onImportPaths: (filePaths: string[]) => void;
-  onImportPickerError: (message: string) => void;
+  onImportClick: () => void;
 }
 
 export function LibraryToolbar({
@@ -24,11 +18,8 @@ export function LibraryToolbar({
   searchQuery,
   onSearchChange,
   onClearSearch,
-  onImportPaths,
-  onImportPickerError,
+  onImportClick,
 }: LibraryToolbarProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
   return (
     <header className="border-b border-[--color-border] px-6 py-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -60,33 +51,9 @@ export function LibraryToolbar({
             </div>
           ) : null}
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".epub,application/epub+zip"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              const files = Array.from(event.target.files ?? []);
-              const filePaths = files
-                .map((file) => (file as FileWithPath).path)
-                .filter((value): value is string => Boolean(value));
-
-              if (files.length > 0 && filePaths.length === 0) {
-                onImportPickerError(
-                  "The import picker did not expose file paths in this runtime. Use drag and drop instead.",
-                );
-              } else if (filePaths.length > 0) {
-                onImportPaths(filePaths);
-              }
-
-              event.target.value = "";
-            }}
-          />
-
           <Button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={onImportClick}
             className="rounded-full bg-[--color-primary] px-5 text-white hover:brightness-90"
             disabled={isImporting}
           >

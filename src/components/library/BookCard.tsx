@@ -43,7 +43,12 @@ export function BookCard({ book, onOpen, onContextMenu }: BookCardProps) {
         onContextMenu(book, event.clientX, event.clientY);
       }}
     >
-      <div className="h-[220px] w-[160px] overflow-hidden bg-[--color-bg-surface] shadow-sm">
+      <button
+        type="button"
+        onClick={() => onOpen(book.id)}
+        className="block h-[220px] w-[160px] cursor-pointer overflow-hidden bg-[--color-bg-surface] text-left shadow-sm"
+        aria-label={`Open ${book.title}`}
+      >
         {coverImageSrc ? (
           <img
             src={coverImageSrc}
@@ -59,7 +64,7 @@ export function BookCard({ book, onOpen, onContextMenu }: BookCardProps) {
             {book.title.trim().charAt(0).toUpperCase() || "?"}
           </div>
         )}
-      </div>
+      </button>
 
       <div className="mt-2 space-y-1">
         <p className="line-clamp-2 text-[13px] text-[--color-text-primary]">{book.title}</p>
