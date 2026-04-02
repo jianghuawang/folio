@@ -24,7 +24,7 @@ use crate::{
         client::{LlmClient, TranslateParagraphError},
         generate_uuid_v4, now_unix_timestamp, serialize_paragraph_locators, ParagraphLocator,
         TranslationCompleteEvent, TranslationErrorEvent, TranslationJob, TranslationJobStatus,
-        TranslationPausedEvent, TranslationPauseReason, TranslationProgressEvent,
+        TranslationPauseReason, TranslationPausedEvent, TranslationProgressEvent,
     },
 };
 
@@ -97,8 +97,16 @@ pub fn spawn_translation_worker(
 
     tokio::spawn(async move {
         let job_id = job.id.clone();
-        let result =
-            run_translation_worker(app_handle.clone(), control, job, book_file_path, model, api_key, mode).await;
+        let result = run_translation_worker(
+            app_handle.clone(),
+            control,
+            job,
+            book_file_path,
+            model,
+            api_key,
+            mode,
+        )
+        .await;
 
         if let Err(error) = result {
             let _ = mark_job_failed(&app_handle, &job_id);
@@ -166,23 +174,35 @@ async fn run_translation_worker(
             }
 
             match client
-                .translate_paragraph(
-                    &work_item.original_html,
-                    &job.target_language,
-                    &model,
-                )
+                .translate_paragraph(&work_item.original_html, &job.target_language, &model)
                 .await
             {
                 Ok(translated_html) => {
-                    persist_translation(
+                    let inserted = persist_translation(
                         &app_handle,
                         &job.book_id,
                         &job.target_language,
                         &work_item,
                         &translated_html,
                     )?;
-                    completed_paragraphs += 1;
-                    update_completed_paragraphs(&app_handle, &job.id, completed_paragraphs)?;
+                    if inserted {
+                        completed_paragraphs += 1;
+                        update_completed_paragraphs(&app_handle, &job.id, completed_paragraphs)?;
+                    } else {
+                        let persisted_count = count_persisted_translations(
+                            &app_handle,
+                            &job.book_id,
+                            &job.target_language,
+                        )?;
+                        if persisted_count > completed_paragraphs {
+                            completed_paragraphs = persisted_count;
+                            update_completed_paragraphs(
+                                &app_handle,
+                                &job.id,
+                                completed_paragraphs,
+                            )?;
+                        }
+                    }
                     remove_failed_locator(&app_handle, &job.id, &work_item.locator)?;
                     app_handle
                         .emit(
@@ -301,12 +321,7 @@ async fn run_translation_worker(
         return Ok(());
     }
 
-    update_job_status(
-        &app_handle,
-        &job.id,
-        TranslationJobStatus::Complete,
-        None,
-    )?;
+    update_job_status(&app_handle, &job.id, TranslationJobStatus::Complete, None)?;
     app_handle
         .emit(
             "translation:complete",
@@ -366,8 +381,32 @@ fn persist_translation(
     target_language: &str,
     work_item: &ParagraphWorkItem,
     translated_html: &str,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     with_connection(app_handle, |connection| {
+        let translation_exists = connection
+            .query_row(
+                "SELECT 1
+                 FROM translations
+                 WHERE book_id = ?1
+                   AND target_language = ?2
+                   AND spine_item_href = ?3
+                   AND paragraph_index = ?4",
+                params![
+                    book_id,
+                    target_language,
+                    work_item.locator.spine_item_href,
+                    work_item.locator.paragraph_index,
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .is_some();
+
+        if translation_exists {
+            return Ok(false);
+        }
+
         connection
             .execute(
                 "INSERT INTO translations (
@@ -395,7 +434,25 @@ fn persist_translation(
             )
             .map_err(|error| error.to_string())?;
 
-        Ok(())
+        Ok(true)
+    })
+}
+
+fn count_persisted_translations(
+    app_handle: &AppHandle,
+    book_id: &str,
+    target_language: &str,
+) -> Result<i64, String> {
+    with_connection(app_handle, |connection| {
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM translations
+                 WHERE book_id = ?1 AND target_language = ?2",
+                params![book_id, target_language],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())
     })
 }
 
@@ -499,7 +556,10 @@ fn remove_failed_locator(
     store_failed_locators(app_handle, job_id, &failed_locators)
 }
 
-fn load_failed_locators(app_handle: &AppHandle, job_id: &str) -> Result<Vec<ParagraphLocator>, String> {
+fn load_failed_locators(
+    app_handle: &AppHandle,
+    job_id: &str,
+) -> Result<Vec<ParagraphLocator>, String> {
     with_connection(app_handle, |connection| {
         let raw_value = connection
             .query_row(
@@ -667,7 +727,9 @@ fn is_text_spine_item(spine_item: &SpineItem) -> bool {
 }
 
 fn read_zip_text(archive: &mut ZipArchive<File>, entry_path: &str) -> Result<String, String> {
-    let mut file = archive.by_name(entry_path).map_err(|error| error.to_string())?;
+    let mut file = archive
+        .by_name(entry_path)
+        .map_err(|error| error.to_string())?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .map_err(|error| error.to_string())?;
@@ -709,10 +771,7 @@ fn extract_paragraph_fragments(chapter_xml: &str) -> Result<Vec<String>, String>
     loop {
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Start(event)) => {
-                let tag_name = event
-                    .name()
-                    .as_ref()
-                    .to_vec();
+                let tag_name = event.name().as_ref().to_vec();
 
                 if tag_name.as_slice() == b"p" && paragraph_depth == 0 {
                     paragraph_depth = 1;

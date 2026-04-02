@@ -32,7 +32,10 @@ impl std::fmt::Display for TranslateParagraphError {
         match self {
             Self::Auth => formatter.write_str("Invalid API key."),
             Self::RateLimited { retry_after_secs } => {
-                write!(formatter, "Rate limit reached. Retry after {retry_after_secs} seconds.")
+                write!(
+                    formatter,
+                    "Rate limit reached. Retry after {retry_after_secs} seconds."
+                )
             }
             Self::Network(message) => formatter.write_str(message),
             Self::InvalidResponse(message)
@@ -61,6 +64,27 @@ impl LlmClient {
     }
 
     pub async fn translate_paragraph(
+        &self,
+        paragraph_html: &str,
+        target_language: &str,
+        model: &str,
+    ) -> Result<String, TranslateParagraphError> {
+        let translated_fragment = self
+            .request_translation_fragment(paragraph_html, target_language, model)
+            .await?;
+
+        sanitize_translated_html(paragraph_html, &translated_fragment)
+    }
+
+    pub async fn test_connection(&self, model: &str) -> Result<(), TranslateParagraphError> {
+        let _ = self
+            .request_translation_fragment("Hello", "English", model)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn request_translation_fragment(
         &self,
         paragraph_html: &str,
         target_language: &str,
@@ -135,7 +159,7 @@ impl LlmClient {
                 )
             })?;
 
-        sanitize_translated_html(paragraph_html, &translated_fragment)
+        Ok(translated_fragment)
     }
 }
 

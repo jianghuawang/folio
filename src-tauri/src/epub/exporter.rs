@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::File,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
 };
@@ -36,11 +36,6 @@ pub fn export_bilingual_epub(
     translations: &[Translation],
     save_path: &str,
 ) -> Result<(), String> {
-    let parent_directory = Path::new(save_path)
-        .parent()
-        .ok_or_else(|| "WRITE_ERROR".to_string())?;
-    fs::create_dir_all(parent_directory).map_err(|_| "WRITE_ERROR".to_string())?;
-
     let source_file = File::open(source_path).map_err(|_| "WRITE_ERROR".to_string())?;
     let mut archive = ZipArchive::new(source_file).map_err(|_| "WRITE_ERROR".to_string())?;
     let spine_items = collect_spine_items(&mut archive).map_err(|_| "WRITE_ERROR".to_string())?;
@@ -51,7 +46,9 @@ pub fn export_bilingual_epub(
     let total_entries = archive.len() as i64;
 
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|_| "WRITE_ERROR".to_string())?;
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|_| "WRITE_ERROR".to_string())?;
         let entry_name = entry.name().to_string();
 
         if entry.is_dir() {
@@ -60,7 +57,8 @@ pub fn export_bilingual_epub(
                 .map_err(|_| "WRITE_ERROR".to_string())?;
         } else {
             let mut contents = Vec::new();
-            entry.read_to_end(&mut contents)
+            entry
+                .read_to_end(&mut contents)
                 .map_err(|_| "WRITE_ERROR".to_string())?;
 
             let options = if entry_name == "mimetype" {
@@ -74,7 +72,8 @@ pub fn export_bilingual_epub(
                 .map_err(|_| "WRITE_ERROR".to_string())?;
 
             if let Some(translations_for_entry) = translations_by_path.get(&entry_name) {
-                let chapter_xml = String::from_utf8(contents).map_err(|_| "WRITE_ERROR".to_string())?;
+                let chapter_xml =
+                    String::from_utf8(contents).map_err(|_| "WRITE_ERROR".to_string())?;
                 let injected_xml =
                     inject_translations_into_chapter(&chapter_xml, translations_for_entry)
                         .map_err(|_| "WRITE_ERROR".to_string())?;
@@ -112,10 +111,10 @@ fn build_translation_lookup(
 
     for translation in translations {
         if let Some(resolved_path) = path_by_href.get(&translation.spine_item_href) {
-            lookup
-                .entry(resolved_path.clone())
-                .or_default()
-                .insert(translation.paragraph_index, translation.translated_html.clone());
+            lookup.entry(resolved_path.clone()).or_default().insert(
+                translation.paragraph_index,
+                translation.translated_html.clone(),
+            );
         }
     }
 
@@ -226,7 +225,9 @@ fn is_text_spine_item(spine_item: &SpineItem) -> bool {
 }
 
 fn read_zip_text(archive: &mut ZipArchive<File>, entry_path: &str) -> Result<String, String> {
-    let mut file = archive.by_name(entry_path).map_err(|error| error.to_string())?;
+    let mut file = archive
+        .by_name(entry_path)
+        .map_err(|error| error.to_string())?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .map_err(|error| error.to_string())?;

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, State};
 
@@ -15,6 +17,7 @@ pub fn export_bilingual_epub(
     target_language: String,
     save_path: String,
 ) -> Result<(), String> {
+    let save_path = save_path.trim().to_string();
     let (managed_file_path, translations) = {
         let connection = state
             .db
@@ -66,5 +69,42 @@ pub fn export_bilingual_epub(
         (managed_file_path, translations)
     };
 
+    validate_save_path(&save_path, &managed_file_path)?;
+
     exporter::export_bilingual_epub(&app, &managed_file_path, &translations, &save_path)
+}
+
+fn validate_save_path(save_path: &str, managed_file_path: &str) -> Result<(), String> {
+    if save_path.is_empty() {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    let export_path = Path::new(save_path);
+    let parent_directory = export_path
+        .parent()
+        .ok_or_else(|| "WRITE_ERROR".to_string())?;
+    export_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "WRITE_ERROR".to_string())?;
+
+    let has_epub_extension = export_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("epub"))
+        .unwrap_or(false);
+    if !has_epub_extension {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    if !parent_directory.exists() || !parent_directory.is_dir() {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    if export_path == Path::new(managed_file_path) {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    Ok(())
 }

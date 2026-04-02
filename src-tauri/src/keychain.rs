@@ -8,12 +8,9 @@ fn entry() -> Result<Entry, KeyringError> {
 }
 
 pub fn save_api_key(api_key: &str) -> Result<(), String> {
-    if api_key.trim().is_empty() {
-        return Ok(());
-    }
-
+    let normalized_api_key = api_key.trim();
     entry()
-        .and_then(|entry| entry.set_password(api_key))
+        .and_then(|entry| entry.set_password(normalized_api_key))
         .map_err(|_| "KEYCHAIN_ERROR".to_string())
 }
 

@@ -166,9 +166,8 @@ pub fn run() {
         })
         .setup(|app| {
             let app_state = db::init_app_state(app.handle())?;
-            commands::translations::normalize_in_progress_jobs(&app_state).map_err(|error| {
-                std::io::Error::new(std::io::ErrorKind::Other, error)
-            })?;
+            commands::translations::normalize_in_progress_jobs(&app_state)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
             app.manage(app_state);
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {

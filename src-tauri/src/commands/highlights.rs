@@ -10,8 +10,7 @@ use tauri::State;
 
 use crate::db::AppState;
 
-const ALLOWED_HIGHLIGHT_COLORS: [&str; 5] =
-    ["#FFD60A", "#30D158", "#0A84FF", "#FF375F", "#BF5AF2"];
+const ALLOWED_HIGHLIGHT_COLORS: [&str; 5] = ["#FFD60A", "#30D158", "#0A84FF", "#FF375F", "#BF5AF2"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Highlight {

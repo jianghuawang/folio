@@ -5,10 +5,9 @@ use crate::{
     db::AppState,
     keychain,
     llm::{
-        now_unix_timestamp, serialize_paragraph_locators, translation_from_row,
+        generate_uuid_v4, now_unix_timestamp, serialize_paragraph_locators, translation_from_row,
         translation_job_from_row, worker, ParagraphLocator, Translation, TranslationJob,
-        TranslationJobStatus, TranslationPausedEvent, TranslationPauseReason,
-        DEFAULT_LLM_MODEL, generate_uuid_v4,
+        TranslationJobStatus, TranslationPauseReason, TranslationPausedEvent, DEFAULT_LLM_MODEL,
     },
 };
 
@@ -62,7 +61,11 @@ pub fn start_translation(
         return Err("TRANSLATION_FAILED".to_string());
     }
 
-    let completed_paragraphs = if replace_existing { 0 } else { existing_translation_count };
+    let completed_paragraphs = if replace_existing {
+        0
+    } else {
+        existing_translation_count
+    };
     if completed_paragraphs >= total_paragraphs && !replace_existing {
         return Err("TRANSLATION_ALREADY_COMPLETE".to_string());
     }
@@ -161,6 +164,16 @@ pub fn pause_translation(
         let mut job = get_translation_job_by_id(&connection, &job_id)?
             .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
 
+        if job.status == TranslationJobStatus::Paused {
+            return Ok(job);
+        }
+
+        if job.status != TranslationJobStatus::InProgress {
+            return Ok(job);
+        }
+
+        let timestamp = now_unix_timestamp();
+
         connection
             .execute(
                 "UPDATE translation_jobs
@@ -172,14 +185,14 @@ pub fn pause_translation(
                     &job_id,
                     TranslationJobStatus::Paused.as_str(),
                     TranslationPauseReason::Manual.as_str(),
-                    now_unix_timestamp(),
+                    timestamp,
                 ],
             )
             .map_err(|error| error.to_string())?;
 
         job.status = TranslationJobStatus::Paused;
         job.pause_reason = Some(TranslationPauseReason::Manual);
-        job.updated_at = now_unix_timestamp();
+        job.updated_at = timestamp;
         job
     };
 
@@ -203,8 +216,6 @@ pub fn resume_translation(
     state: State<'_, AppState>,
     job_id: String,
 ) -> Result<TranslationJob, String> {
-    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
-
     let (job, model, book_file_path) = {
         let connection = state
             .db
@@ -213,8 +224,18 @@ pub fn resume_translation(
 
         let mut job = get_translation_job_by_id(&connection, &job_id)?
             .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
+
+        if job.status == TranslationJobStatus::InProgress {
+            return Ok(job);
+        }
+
+        if job.status != TranslationJobStatus::Paused {
+            return Ok(job);
+        }
+
         let book = get_book_translation_source(&connection, &job.book_id)?;
         let model = read_llm_model(&connection)?;
+        let timestamp = now_unix_timestamp();
 
         connection
             .execute(
@@ -223,16 +244,22 @@ pub fn resume_translation(
                      pause_reason = NULL,
                      updated_at = ?3
                  WHERE id = ?1",
-                params![&job_id, TranslationJobStatus::InProgress.as_str(), now_unix_timestamp()],
+                params![
+                    &job_id,
+                    TranslationJobStatus::InProgress.as_str(),
+                    timestamp
+                ],
             )
             .map_err(|error| error.to_string())?;
 
         job.status = TranslationJobStatus::InProgress;
         job.pause_reason = None;
-        job.updated_at = now_unix_timestamp();
+        job.updated_at = timestamp;
 
         (job, model, book.file_path)
     };
+
+    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
 
     if !worker::resume_job(&job.id) {
         worker::spawn_translation_worker(
@@ -259,10 +286,16 @@ pub fn cancel_translation(state: State<'_, AppState>, job_id: String) -> Result<
         let job = get_translation_job_by_id(&connection, &job_id)?
             .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
 
-        if job.status == TranslationJobStatus::Cancelled {
+        if matches!(
+            job.status,
+            TranslationJobStatus::Cancelled
+                | TranslationJobStatus::Complete
+                | TranslationJobStatus::Failed
+        ) {
             return Ok(());
         }
 
+        let timestamp = now_unix_timestamp();
         connection
             .execute(
                 "UPDATE translation_jobs
@@ -270,7 +303,7 @@ pub fn cancel_translation(state: State<'_, AppState>, job_id: String) -> Result<
                      pause_reason = NULL,
                      updated_at = ?3
                  WHERE id = ?1",
-                params![&job_id, TranslationJobStatus::Cancelled.as_str(), now_unix_timestamp()],
+                params![&job_id, TranslationJobStatus::Cancelled.as_str(), timestamp],
             )
             .map_err(|error| error.to_string())?;
     }
@@ -329,8 +362,6 @@ pub fn retry_failed_paragraphs(
     state: State<'_, AppState>,
     job_id: String,
 ) -> Result<TranslationJob, String> {
-    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
-
     let (job, model, book_file_path, failed_locators) = {
         let connection = state
             .db
@@ -339,9 +370,16 @@ pub fn retry_failed_paragraphs(
 
         let mut job = get_translation_job_by_id(&connection, &job_id)?
             .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
+        if job.status == TranslationJobStatus::InProgress
+            || job.failed_paragraph_locators.is_empty()
+        {
+            return Ok(job);
+        }
+
         let book = get_book_translation_source(&connection, &job.book_id)?;
         let model = read_llm_model(&connection)?;
         let failed_locators = job.failed_paragraph_locators.clone();
+        let timestamp = now_unix_timestamp();
 
         connection
             .execute(
@@ -355,7 +393,7 @@ pub fn retry_failed_paragraphs(
                     &job_id,
                     TranslationJobStatus::InProgress.as_str(),
                     serialize_paragraph_locators(&Vec::<ParagraphLocator>::new())?,
-                    now_unix_timestamp(),
+                    timestamp,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -363,10 +401,12 @@ pub fn retry_failed_paragraphs(
         job.status = TranslationJobStatus::InProgress;
         job.pause_reason = None;
         job.failed_paragraph_locators = Vec::new();
-        job.updated_at = now_unix_timestamp();
+        job.updated_at = timestamp;
 
         (job, model, book.file_path, failed_locators)
     };
+
+    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
 
     worker::spawn_translation_worker(
         app,
@@ -429,7 +469,9 @@ fn read_llm_model(connection: &rusqlite::Connection) -> Result<String, String> {
         )
         .optional()
         .map_err(|error| error.to_string())?
-        .map(|raw_value| serde_json::from_str::<String>(&raw_value).map_err(|error| error.to_string()))
+        .map(|raw_value| {
+            serde_json::from_str::<String>(&raw_value).map_err(|error| error.to_string())
+        })
         .transpose()?
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());

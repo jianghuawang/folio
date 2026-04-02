@@ -160,16 +160,25 @@ pub fn translation_job_from_row(row: &Row<'_>) -> rusqlite::Result<TranslationJo
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
     })?;
 
-    let status = TranslationJobStatus::from_db(&row.get::<_, String>("status")?).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)))
-    })?;
+    let status =
+        TranslationJobStatus::from_db(&row.get::<_, String>("status")?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+            )
+        })?;
 
     let pause_reason = row
         .get::<_, Option<String>>("pause_reason")?
         .map(|value| TranslationPauseReason::from_db(&value))
         .transpose()
         .map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)))
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+            )
         })?;
 
     Ok(TranslationJob {

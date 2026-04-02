@@ -5,7 +5,10 @@ use tauri::State;
 use crate::{
     db::AppState,
     keychain,
-    llm::{client::{LlmClient, TranslateParagraphError}, DEFAULT_LLM_MODEL},
+    llm::{
+        client::{LlmClient, TranslateParagraphError},
+        DEFAULT_LLM_MODEL,
+    },
 };
 
 const LLM_MODEL_KEY: &str = "llm_model";
@@ -70,7 +73,8 @@ pub fn save_app_settings(
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![
                 LLM_MODEL_KEY,
-                serde_json::to_string(&resolved_settings.llm_model).map_err(|error| error.to_string())?
+                serde_json::to_string(&resolved_settings.llm_model)
+                    .map_err(|error| error.to_string())?
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -80,7 +84,16 @@ pub fn save_app_settings(
 
 #[tauri::command]
 pub fn save_api_key(api_key: String) -> Result<(), String> {
-    keychain::save_api_key(&api_key)
+    let normalized_api_key = api_key.trim();
+    if normalized_api_key.is_empty() {
+        if keychain::has_api_key()? {
+            return Ok(());
+        }
+
+        return Err("API_KEY_REQUIRED".to_string());
+    }
+
+    keychain::save_api_key(normalized_api_key)
 }
 
 #[tauri::command]
@@ -121,10 +134,7 @@ pub async fn test_openrouter_connection(
         model.trim().to_string()
     };
 
-    match client
-        .translate_paragraph("Hello", "English", &resolved_model)
-        .await
-    {
+    match client.test_connection(&resolved_model).await {
         Ok(_) => Ok(ConnectionTestResult::Success { success: true }),
         Err(error) => Ok(ConnectionTestResult::Failure {
             success: false,
@@ -142,7 +152,9 @@ fn read_app_settings(connection: &rusqlite::Connection) -> Result<AppSettings, S
         )
         .optional()
         .map_err(|error| error.to_string())?
-        .map(|raw_value| serde_json::from_str::<String>(&raw_value).map_err(|error| error.to_string()))
+        .map(|raw_value| {
+            serde_json::from_str::<String>(&raw_value).map_err(|error| error.to_string())
+        })
         .transpose()?
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
@@ -153,7 +165,9 @@ fn read_app_settings(connection: &rusqlite::Connection) -> Result<AppSettings, S
 fn map_connection_test_error(error: &TranslateParagraphError) -> String {
     match error {
         TranslateParagraphError::Auth => "Invalid API key.".to_string(),
-        TranslateParagraphError::RateLimited { .. } => "Rate limit reached. Please try again.".to_string(),
+        TranslateParagraphError::RateLimited { .. } => {
+            "Rate limit reached. Please try again.".to_string()
+        }
         TranslateParagraphError::Network(_) => {
             "Network error. Check your internet connection and try again.".to_string()
         }
