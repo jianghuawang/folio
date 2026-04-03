@@ -43,7 +43,7 @@ export function LibraryToolbar({
         </div>
       </div>
 
-      <div className="fixed right-6 top-6 z-40 flex items-center gap-3">
+      <div className="fixed right-6 top-4 z-40 flex items-center gap-3">
         {isImporting ? (
           <div className="inline-flex items-center gap-2 rounded-full bg-[--color-bg-surface] px-3 py-2 text-sm text-[--color-text-secondary] shadow-sm">
             <Loader2 className="h-4 w-4 animate-spin" />

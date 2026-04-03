@@ -2,7 +2,10 @@ import Epub, { type Book as EpubBook, type NavItem, type Rendition } from "epubj
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type Contents from "epubjs/types/contents";
 
+import type { Highlight } from "@/types/annotation";
 import type { Book } from "@/types/book";
+import type { ReadingFontFamily, ReadingSettings, ReadingTheme } from "@/types/settings";
+import type { Translation } from "@/types/translation";
 
 export interface ReaderTocItem {
   depth: number;
@@ -20,11 +23,42 @@ export interface ReaderLocationState {
   progress: number;
 }
 
+export interface ReaderSelectionPayload {
+  cfiRange: string;
+  position: {
+    left: number;
+    top: number;
+  };
+  text: string;
+}
+
+export interface ReaderAnnotationLocation {
+  chapterTitle: string;
+  progress: number;
+}
+
+interface ReaderSelectionSnapshot {
+  range: Range;
+  rect: DOMRect;
+  text: string;
+  timestamp: number;
+}
+
 export interface EpubBridge {
+  applyReadingSettings: (settings: ReadingSettings) => void;
+  clearSelection: () => void;
   destroy: () => void;
+  goToCfi: (cfi: string) => Promise<void>;
   goToHref: (href: string) => Promise<void>;
   next: () => Promise<void>;
   prev: () => Promise<void>;
+  resolveAnnotationLocation: (cfi: string) => Promise<ReaderAnnotationLocation | null>;
+  setHighlights: (highlights: Highlight[]) => void;
+  setTranslations: (payload: {
+    enabled: boolean;
+    targetLanguage: string | null;
+    translations: Translation[];
+  }) => void;
 }
 
 interface CreateEpubBridgeOptions {
@@ -32,15 +66,66 @@ interface CreateEpubBridgeOptions {
   container: HTMLElement;
   onError: (error: Error) => void;
   onLocationChange: (location: ReaderLocationState) => void;
+  onPositionRestoreError?: () => void;
   onReady: (payload: { bridge: EpubBridge; toc: ReaderTocItem[] }) => void;
+  onSelectionChange?: (selection: ReaderSelectionPayload | null) => void;
+  readingSettings: ReadingSettings;
 }
 
-const DEFAULT_FONT_SIZE = "18px";
-const DEFAULT_FONT_FAMILY = "Georgia, serif";
-const DEFAULT_LINE_HEIGHT = "1.6";
+type RenditionLocation = {
+  atEnd?: boolean;
+  atStart?: boolean;
+  cfi?: string;
+  href?: string;
+  percentage?: number;
+  start?: { cfi?: string; href?: string; percentage?: number };
+};
+
 const COVER_SECTION_HINTS = ["cover", "titlepage", "title-page", "frontcover", "front-cover"];
 const TRACKPAD_SWIPE_THRESHOLD = 90;
 const MIN_HORIZONTAL_DELTA = 8;
+const INITIAL_DISPLAY_TIMEOUT_MS = 4000;
+const BOOK_READY_TIMEOUT_MS = 4000;
+const SELECTION_SNAPSHOT_TTL_MS = 500;
+
+const FONT_STACKS: Record<ReadingFontFamily, string> = {
+  Georgia: "Georgia, serif",
+  Menlo: "Menlo, Monaco, monospace",
+  Palatino: "\"Palatino Linotype\", \"Book Antiqua\", Palatino, serif",
+  "system-ui": "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", sans-serif",
+};
+
+const THEME_STYLES: Record<
+  ReadingTheme,
+  {
+    background: string;
+    color: string;
+    translationColor: string;
+  }
+> = {
+  dark: {
+    background: "#2c2c2e",
+    color: "#e5e5ea",
+    translationColor: "#8e8e93",
+  },
+  light: {
+    background: "#ffffff",
+    color: "#1a1a1a",
+    translationColor: "#6e6e73",
+  },
+  sepia: {
+    background: "#f5f0e8",
+    color: "#3b2f2f",
+    translationColor: "#6e6e73",
+  },
+};
+
+export const DEFAULT_READING_SETTINGS: ReadingSettings = {
+  font_family: "Georgia",
+  font_size: 18,
+  line_height: 1.6,
+  theme: "light",
+};
 
 function flattenTocItems(items: NavItem[], depth = 0): ReaderTocItem[] {
   return items.flatMap((item) => {
@@ -57,6 +142,10 @@ function flattenTocItems(items: NavItem[], depth = 0): ReaderTocItem[] {
 
 function normalizeHref(href: string) {
   return href.split("#")[0] ?? href;
+}
+
+function getTranslationKey(spineItemHref: string, paragraphIndex: number) {
+  return `${normalizeHref(spineItemHref)}::${paragraphIndex}`;
 }
 
 function isCoverLikeHref(href: string) {
@@ -97,11 +186,7 @@ function getBeginningTarget(tocItems: ReaderTocItem[], epubBook: EpubBook) {
 
 async function syncCurrentLocation(
   rendition: Rendition,
-  handleRelocated: (location: {
-    atEnd?: boolean;
-    atStart?: boolean;
-    start?: { cfi?: string; href?: string; percentage?: number };
-  }) => Promise<void>,
+  handleRelocated: (location: RenditionLocation) => Promise<void>,
 ) {
   const currentLocation = await rendition.currentLocation();
 
@@ -112,6 +197,9 @@ async function syncCurrentLocation(
   await handleRelocated({
     atEnd: false,
     atStart: false,
+    cfi: currentLocation.cfi,
+    href: currentLocation.href,
+    percentage: currentLocation.percentage,
     start: {
       cfi: currentLocation.cfi,
       href: currentLocation.href,
@@ -187,34 +275,45 @@ function attachWheelNavigation(
   };
 }
 
-function applyReaderTheme(rendition: Rendition) {
-  rendition.themes.register("folio-light", {
-    "html, body": {
-      background: "#ffffff",
-      color: "#1a1a1a",
-      "font-family": DEFAULT_FONT_FAMILY,
-      "font-size": DEFAULT_FONT_SIZE,
-      "line-height": DEFAULT_LINE_HEIGHT,
-      margin: "0",
-      padding: "0",
-      "overscroll-behavior": "none",
-    },
-    body: {
-      background: "#ffffff",
-      color: "#1a1a1a",
-      "font-family": DEFAULT_FONT_FAMILY,
-      "font-size": DEFAULT_FONT_SIZE,
-      "line-height": DEFAULT_LINE_HEIGHT,
-      "overscroll-behavior": "none",
-    },
-    p: {
-      "line-height": DEFAULT_LINE_HEIGHT,
-    },
+function registerReaderThemes(rendition: Rendition) {
+  (Object.keys(THEME_STYLES) as ReadingTheme[]).forEach((themeKey) => {
+    const styles = THEME_STYLES[themeKey];
+
+    rendition.themes.register(`folio-${themeKey}`, {
+      ".folio-translation": {
+        color: styles.translationColor,
+        "font-size": "16px",
+        "line-height": "1.7",
+        margin: "4px 0 0 0",
+      },
+      "html, body": {
+        background: styles.background,
+        color: styles.color,
+        margin: "0",
+        "overscroll-behavior": "none",
+        padding: "0",
+      },
+      body: {
+        background: styles.background,
+        color: styles.color,
+        margin: "0",
+        "overscroll-behavior": "none",
+        padding: "0",
+      },
+      p: {
+        margin: "0 0 1em 0",
+      },
+    });
   });
-  rendition.themes.select("folio-light");
-  rendition.themes.font(DEFAULT_FONT_FAMILY);
-  rendition.themes.fontSize(DEFAULT_FONT_SIZE);
-  rendition.themes.override("line-height", DEFAULT_LINE_HEIGHT);
+}
+
+function applyReadingSettingsToRendition(rendition: Rendition, settings: ReadingSettings) {
+  rendition.themes.select(`folio-${settings.theme}`);
+  rendition.themes.font(FONT_STACKS[settings.font_family]);
+  rendition.themes.fontSize(`${settings.font_size}px`);
+  rendition.themes.override("font-family", FONT_STACKS[settings.font_family]);
+  rendition.themes.override("font-size", `${settings.font_size}px`);
+  rendition.themes.override("line-height", settings.line_height.toString());
 }
 
 function updateReaderMargins(rendition: Rendition) {
@@ -235,30 +334,391 @@ function toReaderError(error: unknown) {
   return new Error(String(error));
 }
 
+async function displayWithTimeout(
+  rendition: Rendition,
+  target?: string | null,
+  timeoutMs = INITIAL_DISPLAY_TIMEOUT_MS,
+) {
+  let timeoutId: number | null = null;
+
+  try {
+    await Promise.race([
+      target ? rendition.display(target) : rendition.display(),
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error("DISPLAY_TIMEOUT"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function awaitWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+) {
+  let timeoutId: number | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
+
+function getContentsSectionHref(contents: Contents) {
+  return normalizeHref(
+    ((contents as unknown as { section?: { href?: string } }).section?.href ?? "").trim(),
+  );
+}
+
+function clearInjectedTranslations(contents: Contents) {
+  contents.document
+    .querySelectorAll<HTMLElement>("[data-folio-translation='true']")
+    .forEach((node) => node.remove());
+}
+
+function clampSelectionCoordinate(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
+}
+
+function getRangeRect(range: Range) {
+  return range.getClientRects()[0] ?? range.getBoundingClientRect();
+}
+
+function createSelectionSnapshot(selection: Selection): ReaderSelectionSnapshot | null {
+  if (selection.rangeCount === 0 || selection.isCollapsed) {
+    return null;
+  }
+
+  const text = selection.toString().trim();
+  if (!text) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0).cloneRange();
+  const rect = getRangeRect(range);
+  if (!rect) {
+    return null;
+  }
+
+  return {
+    range,
+    rect,
+    text,
+    timestamp: Date.now(),
+  };
+}
+
+function isFreshSelectionSnapshot(snapshot: ReaderSelectionSnapshot | null) {
+  if (!snapshot) {
+    return false;
+  }
+
+  return Date.now() - snapshot.timestamp <= SELECTION_SNAPSHOT_TTL_MS;
+}
+
 export async function createEpubBridge({
   book,
   container,
   onError,
   onLocationChange,
+  onPositionRestoreError,
   onReady,
+  onSelectionChange,
+  readingSettings,
 }: CreateEpubBridgeOptions): Promise<EpubBridge> {
   const assetUrl = convertFileSrc(book.file_path);
   const epubBook = Epub(assetUrl) as EpubBook;
   const rendition = epubBook.renderTo(container, {
+    allowScriptedContent: true,
     flow: "paginated",
     height: "100%",
     width: "100%",
   });
   const contentCleanupCallbacks = new Set<() => void>();
-  let destroyed = false;
   const wheelNavigationHandler = createWheelNavigationHandler(rendition);
+  let destroyed = false;
+  let tocItems: ReaderTocItem[] = [];
+  let lastSelectionWindow: Window | null = null;
+  let lastAppliedHighlightSignature = "";
+  let lastAppliedSettingsSignature = "";
+  let lastAppliedTranslationSignature = "";
+  let currentHighlights: Highlight[] = [];
+  let renderedHighlights: Highlight[] = [];
+  let currentTranslations = new Map<string, Translation>();
+  let bilingualModeEnabled = false;
+  let initialDisplayComplete = false;
 
-  applyReaderTheme(rendition);
+  registerReaderThemes(rendition);
+  applyReadingSettingsToRendition(rendition, readingSettings);
   updateReaderMargins(rendition);
-  contentCleanupCallbacks.add(attachWheelNavigation(window, wheelNavigationHandler.handleWheel));
-  contentCleanupCallbacks.add(attachWheelNavigation(container, wheelNavigationHandler.handleWheel));
+
+  const applyHighlights = () => {
+    const nextSignature = currentHighlights
+      .map((highlight) => `${highlight.id}:${highlight.cfi_range}:${highlight.color}`)
+      .join("|");
+
+    if (nextSignature === lastAppliedHighlightSignature) {
+      return;
+    }
+
+    renderedHighlights.forEach((highlight) => {
+      try {
+        rendition.annotations.remove(highlight.cfi_range, "highlight");
+      } catch {
+        // ignore annotation cleanup failures
+      }
+    });
+
+    currentHighlights.forEach((highlight) => {
+      try {
+        rendition.annotations.add(
+          "highlight",
+          highlight.cfi_range,
+          {},
+          highlight.id as never,
+          "hl",
+          {
+            fill: highlight.color,
+            "fill-opacity": "0.35",
+          } as never,
+        );
+      } catch {
+        // ignore highlight render failures
+      }
+    });
+
+    renderedHighlights = currentHighlights;
+    lastAppliedHighlightSignature = nextSignature;
+  };
+
+  const injectTranslationsIntoContents = (contents: Contents) => {
+    clearInjectedTranslations(contents);
+
+    if (!bilingualModeEnabled || currentTranslations.size === 0) {
+      return;
+    }
+
+    const sectionHref = getContentsSectionHref(contents);
+    if (!sectionHref) {
+      return;
+    }
+
+    const paragraphs = Array.from(contents.document.body.querySelectorAll("p"));
+
+    paragraphs.forEach((paragraph, paragraphIndex) => {
+      const translation = currentTranslations.get(getTranslationKey(sectionHref, paragraphIndex));
+      if (!translation) {
+        return;
+      }
+
+      const translationElement = contents.document.createElement("p");
+      translationElement.className = "folio-translation";
+      translationElement.dataset.folioTranslation = "true";
+      translationElement.innerHTML = translation.translated_html;
+      paragraph.insertAdjacentElement("afterend", translationElement);
+    });
+  };
+
+  const applyTranslations = () => {
+    const contentsList =
+      (
+        rendition as unknown as {
+          getContents?: () => Contents[];
+        }
+      ).getContents?.() ?? [];
+
+    contentsList.forEach((contents) => {
+      injectTranslationsIntoContents(contents);
+    });
+  };
+
+  const clearSelection = () => {
+    lastSelectionWindow?.getSelection()?.removeAllRanges();
+    onSelectionChange?.(null);
+  };
+
+  const resolveAnnotationLocation = async (cfi: string): Promise<ReaderAnnotationLocation | null> => {
+    if (!cfi.trim().length) {
+      return null;
+    }
+
+    let href = "";
+
+    try {
+      const spineSection = (
+        epubBook.spine as unknown as { get: (target: string) => { href?: string } | null }
+      ).get(cfi);
+      href = spineSection?.href ?? "";
+    } catch {
+      href = "";
+    }
+
+    let progress = 0;
+    try {
+      progress = epubBook.locations.percentageFromCfi(cfi);
+    } catch {
+      progress = 0;
+    }
+
+    return {
+      chapterTitle: resolveChapterTitle(href, tocItems, book.title),
+      progress: Number.isFinite(progress) ? progress : 0,
+    };
+  };
+
+  const handleResize = () => {
+    updateReaderMargins(rendition);
+    applyTranslations();
+  };
+
+  const handleRelocated = async (location: RenditionLocation) => {
+    const currentCfi = location.start?.cfi ?? location.cfi ?? "";
+    const currentHref = location.start?.href ?? location.href ?? "";
+    let percentage =
+      currentCfi && epubBook.locations
+        ? epubBook.locations.percentageFromCfi(currentCfi)
+        : location.start?.percentage ?? location.percentage ?? 0;
+
+    if (!Number.isFinite(percentage)) {
+      percentage = 0;
+    }
+
+    onLocationChange({
+      atEnd: Boolean(location.atEnd),
+      atStart: Boolean(location.atStart),
+      cfi: currentCfi,
+      chapterTitle: resolveChapterTitle(currentHref, tocItems, book.title),
+      href: currentHref,
+      progress: percentage,
+    });
+
+    onSelectionChange?.(null);
+    applyTranslations();
+    applyHighlights();
+  };
+
+  const emitSelection = (
+    cfiRange: string,
+    contents: Contents,
+    selectionSnapshot: ReaderSelectionSnapshot,
+  ) => {
+    const frameElement = contents.window.frameElement as HTMLElement | null;
+    const frameRect = frameElement?.getBoundingClientRect() ?? container.getBoundingClientRect();
+    const left = clampSelectionCoordinate(
+      frameRect.left + selectionSnapshot.rect.left + selectionSnapshot.rect.width / 2,
+      24,
+      window.innerWidth - 24,
+    );
+    const top = clampSelectionCoordinate(
+      frameRect.top + selectionSnapshot.rect.top,
+      24,
+      window.innerHeight - 24,
+    );
+
+    lastSelectionWindow = contents.window;
+    onSelectionChange?.({
+      cfiRange,
+      position: {
+        left,
+        top,
+      },
+      text: selectionSnapshot.text,
+    });
+  };
 
   rendition.hooks.content.register((contents: Contents) => {
+    let lastSelectionSnapshot: ReaderSelectionSnapshot | null = null;
+    let selectionSyncTimeout: number | null = null;
+    let selectionSyncFrame: number | null = null;
+
+    const readLiveSelectionSnapshot = () => {
+      const selection = contents.window.getSelection();
+      const snapshot = selection ? createSelectionSnapshot(selection) : null;
+
+      if (snapshot) {
+        lastSelectionSnapshot = snapshot;
+      }
+
+      return snapshot;
+    };
+
+    const getSelectionSnapshot = () => {
+      const liveSnapshot = readLiveSelectionSnapshot();
+      if (liveSnapshot) {
+        return liveSnapshot;
+      }
+
+      return isFreshSelectionSnapshot(lastSelectionSnapshot) ? lastSelectionSnapshot : null;
+    };
+
+    const handleContentsSelected = (cfiRange: string) => {
+      // Use a small delay to ensure the browser selection is fully materialized
+      // before we try to capture it. The "selected" event can fire before
+      // getSelection() returns the new selection in some cases.
+      window.setTimeout(() => {
+        const selectionSnapshot = getSelectionSnapshot();
+        if (!selectionSnapshot) {
+          return;
+        }
+
+        emitSelection(cfiRange, contents, selectionSnapshot);
+      }, 0);
+    };
+
+    const syncSelectionFromDom = () => {
+      const selectionSnapshot = readLiveSelectionSnapshot();
+      if (!selectionSnapshot) {
+        return;
+      }
+
+      try {
+        const cfiRange = contents.cfiFromRange(selectionSnapshot.range);
+        emitSelection(cfiRange, contents, selectionSnapshot);
+      } catch {}
+    };
+
+    const scheduleSelectionSync = () => {
+      syncSelectionFromDom();
+
+      if (selectionSyncFrame !== null) {
+        window.cancelAnimationFrame(selectionSyncFrame);
+      }
+
+      selectionSyncFrame = window.requestAnimationFrame(() => {
+        selectionSyncFrame = null;
+        syncSelectionFromDom();
+      });
+
+      if (selectionSyncTimeout !== null) {
+        window.clearTimeout(selectionSyncTimeout);
+      }
+
+      selectionSyncTimeout = window.setTimeout(() => {
+        selectionSyncTimeout = null;
+        syncSelectionFromDom();
+      }, 32);
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -269,9 +729,29 @@ export async function createEpubBridge({
         event.preventDefault();
         void rendition.next();
       }
+
+      if (event.key === "Escape") {
+        onSelectionChange?.(null);
+      }
     };
 
+    const handleMouseDown = () => {
+      if (contents.window.getSelection()?.isCollapsed ?? true) {
+        onSelectionChange?.(null);
+      }
+    };
+
+    const handleMouseUp = () => {
+      scheduleSelectionSync();
+    };
+
+    contents.on("selected", handleContentsSelected);
+    contents.document.addEventListener("selectionchange", scheduleSelectionSync);
     contents.document.addEventListener("keydown", handleKeyDown);
+    contents.document.addEventListener("mousedown", handleMouseDown);
+    contents.document.addEventListener("mouseup", handleMouseUp);
+    contents.document.addEventListener("touchend", scheduleSelectionSync);
+
     const unlistenDocumentWheel = attachWheelNavigation(
       contents.document,
       wheelNavigationHandler.handleWheel,
@@ -288,8 +768,24 @@ export async function createEpubBridge({
       contents.document.documentElement,
       wheelNavigationHandler.handleWheel,
     );
+
+    injectTranslationsIntoContents(contents);
+    applyHighlights();
+
     contentCleanupCallbacks.add(() => {
+      contents.off("selected", handleContentsSelected);
+      if (selectionSyncTimeout !== null) {
+        window.clearTimeout(selectionSyncTimeout);
+      }
+      if (selectionSyncFrame !== null) {
+        window.cancelAnimationFrame(selectionSyncFrame);
+      }
+      contents.document.removeEventListener("selectionchange", scheduleSelectionSync);
       contents.document.removeEventListener("keydown", handleKeyDown);
+      contents.document.removeEventListener("mousedown", handleMouseDown);
+      contents.document.removeEventListener("mouseup", handleMouseUp);
+      contents.document.removeEventListener("touchend", scheduleSelectionSync);
+      clearInjectedTranslations(contents);
       unlistenDocumentWheel();
       unlistenWindowWheel();
       unlistenBodyWheel();
@@ -297,53 +793,109 @@ export async function createEpubBridge({
     });
   });
 
-  const handleResize = () => {
-    updateReaderMargins(rendition);
-  };
+  contentCleanupCallbacks.add(attachWheelNavigation(window, wheelNavigationHandler.handleWheel));
+  contentCleanupCallbacks.add(attachWheelNavigation(container, wheelNavigationHandler.handleWheel));
 
-  const handleRelocated = async (location: {
-    atEnd?: boolean;
-    atStart?: boolean;
-    start?: { cfi?: string; href?: string; percentage?: number };
-  }) => {
-    const currentCfi = location.start?.cfi ?? "";
-    const currentHref = location.start?.href ?? "";
-    const percentage =
-      currentCfi && epubBook.locations
-        ? epubBook.locations.percentageFromCfi(currentCfi)
-        : location.start?.percentage ?? 0;
+  rendition.on("relocated", handleRelocated);
+  window.addEventListener("resize", handleResize);
 
-    onLocationChange({
-      atEnd: Boolean(location.atEnd),
-      atStart: Boolean(location.atStart),
-      cfi: currentCfi,
-      chapterTitle: resolveChapterTitle(currentHref, tocItems, book.title),
-      href: currentHref,
-      progress: Number.isFinite(percentage) ? percentage : 0,
-    });
-  };
+  const refreshCurrentView = async () => {
+    const currentLocation = await rendition.currentLocation();
+    const currentCfi = currentLocation?.cfi ?? "";
 
-  let tocItems: ReaderTocItem[] = [];
-  const destroyBridge = () => {
-    if (destroyed) {
+    if (!currentCfi) {
+      applyTranslations();
+      applyHighlights();
       return;
     }
 
-    destroyed = true;
-    rendition.off("relocated", handleRelocated);
-    window.removeEventListener("resize", handleResize);
-    wheelNavigationHandler.cleanup();
-    contentCleanupCallbacks.forEach((cleanup) => cleanup());
-    contentCleanupCallbacks.clear();
-    rendition.destroy();
-    epubBook.destroy();
+    await rendition.display(currentCfi);
+  };
+
+  const bridge: EpubBridge = {
+    applyReadingSettings: (settings) => {
+      const nextSignature = `${settings.theme}:${settings.font_family}:${settings.font_size}:${settings.line_height}`;
+      if (nextSignature === lastAppliedSettingsSignature) {
+        return;
+      }
+
+      lastAppliedSettingsSignature = nextSignature;
+      applyReadingSettingsToRendition(rendition, settings);
+      applyTranslations();
+    },
+    clearSelection,
+    destroy: () => {
+      if (destroyed) {
+        return;
+      }
+
+      destroyed = true;
+      rendition.off("relocated", handleRelocated);
+      window.removeEventListener("resize", handleResize);
+      wheelNavigationHandler.cleanup();
+      contentCleanupCallbacks.forEach((cleanup) => cleanup());
+      contentCleanupCallbacks.clear();
+      rendition.destroy();
+      epubBook.destroy();
+    },
+    goToCfi: (cfi) => rendition.display(cfi),
+    goToHref: (href) => rendition.display(href),
+    next: () => rendition.next(),
+    prev: () => rendition.prev(),
+    resolveAnnotationLocation,
+    setHighlights: (highlights) => {
+      currentHighlights = highlights;
+      applyHighlights();
+    },
+    setTranslations: ({ enabled, targetLanguage, translations }) => {
+      const nextSignature = `${enabled}:${targetLanguage ?? ""}:${translations
+        .map((translation) => `${translation.id}:${translation.paragraph_hash}`)
+        .join("|")}`;
+
+      if (nextSignature === lastAppliedTranslationSignature) {
+        return;
+      }
+
+      lastAppliedTranslationSignature = nextSignature;
+      bilingualModeEnabled = enabled;
+      currentTranslations = new Map(
+        translations.map((translation) => [
+          getTranslationKey(translation.spine_item_href, translation.paragraph_index),
+          translation,
+        ]),
+      );
+
+      void refreshCurrentView().catch(() => undefined);
+    },
   };
 
   try {
-    await epubBook.ready;
+    await awaitWithTimeout(epubBook.ready, BOOK_READY_TIMEOUT_MS, "BOOK_READY_TIMEOUT");
 
-    const navigation = await epubBook.loaded.navigation;
-    tocItems = flattenTocItems(navigation?.toc ?? []);
+    const updateTocItems = (items: ReaderTocItem[]) => {
+      tocItems = items;
+
+      if (!initialDisplayComplete) {
+        return;
+      }
+
+      onReady({
+        bridge,
+        toc: tocItems,
+      });
+      void syncCurrentLocation(rendition, handleRelocated).catch(() => undefined);
+    };
+
+    void epubBook.loaded.navigation
+      .then((navigation) => {
+        if (destroyed) {
+          return;
+        }
+
+        updateTocItems(flattenTocItems(navigation?.toc ?? []));
+      })
+      .catch(() => undefined);
+
     const beginningTarget = getBeginningTarget(tocItems, epubBook);
     const savedCfi = book.last_position_cfi?.trim() || null;
     const renditionManager = (
@@ -362,32 +914,33 @@ export async function createEpubBridge({
       ),
     );
 
-    rendition.on("relocated", handleRelocated);
-    window.addEventListener("resize", handleResize);
+    const displayFromBeginning = async () => {
+      if (beginningTarget) {
+        try {
+          await displayWithTimeout(rendition, beginningTarget);
+          return;
+        } catch {
+          // fall through to epub.js default display below
+        }
+      }
+
+      await displayWithTimeout(rendition);
+    };
 
     if (savedCfi) {
       try {
-        await rendition.display(savedCfi);
+        await displayWithTimeout(rendition, savedCfi);
       } catch {
-        if (beginningTarget) {
-          await rendition.display(beginningTarget);
-        } else {
-          await rendition.display();
-        }
+        onPositionRestoreError?.();
+        await displayFromBeginning();
       }
-    } else if (beginningTarget) {
-      await rendition.display(beginningTarget);
     } else {
-      await rendition.display();
+      await displayFromBeginning();
     }
 
+    initialDisplayComplete = true;
     onReady({
-      bridge: {
-        destroy: destroyBridge,
-        goToHref: (href) => rendition.display(href),
-        next: () => rendition.next(),
-        prev: () => rendition.prev(),
-      },
+      bridge,
       toc: tocItems,
     });
 
@@ -402,17 +955,12 @@ export async function createEpubBridge({
       })
       .catch(() => undefined);
   } catch (error) {
-    destroyBridge();
+    bridge.destroy();
     onError(toReaderError(error));
     throw error;
   }
 
-  return {
-    destroy: destroyBridge,
-    goToHref: (href) => rendition.display(href),
-    next: () => rendition.next(),
-    prev: () => rendition.prev(),
-  };
+  return bridge;
 }
 
 export function getReaderErrorMessage(error: Error) {

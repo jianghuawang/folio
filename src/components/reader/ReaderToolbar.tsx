@@ -1,17 +1,30 @@
 import {
-  Bookmark,
+  Download,
+  Languages,
   Menu,
   NotebookTabs,
-  Search,
+  Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { DisplaySettingsPopover } from "@/components/reader/DisplaySettingsPopover";
 import { Button } from "@/components/ui/button";
+import type { ReadingSettings, ReadingTheme } from "@/types/settings";
 
 interface ReaderToolbarProps {
+  canExport: boolean;
+  canTranslate: boolean;
+  onCycleTheme: () => void;
+  onExport: () => void;
+  onOpenTranslationSheet: () => void;
+  onToggleAnnotations: () => void;
+  onToggleBilingualMode: () => void;
+  onToggleToc: () => void;
+  onUpdateReadingSettings: (payload: Partial<ReadingSettings>) => void;
+  readingSettings: ReadingSettings;
+  showBilingualToggle: boolean;
   title: string;
   visible: boolean;
-  onToggleToc: () => void;
 }
 
 function ToolbarIconButton({
@@ -41,7 +54,33 @@ function ToolbarIconButton({
   );
 }
 
-export function ReaderToolbar({ title, visible, onToggleToc }: ReaderToolbarProps) {
+function nextThemeLabel(theme: ReadingTheme) {
+  if (theme === "light") {
+    return "Switch to Sepia theme";
+  }
+
+  if (theme === "sepia") {
+    return "Switch to Dark theme";
+  }
+
+  return "Switch to Light theme";
+}
+
+export function ReaderToolbar({
+  canExport,
+  canTranslate,
+  onCycleTheme,
+  onExport,
+  onOpenTranslationSheet,
+  onToggleAnnotations,
+  onToggleBilingualMode,
+  onToggleToc,
+  onUpdateReadingSettings,
+  readingSettings,
+  showBilingualToggle,
+  title,
+  visible,
+}: ReaderToolbarProps) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-5 pt-3">
       <div
@@ -53,15 +92,19 @@ export function ReaderToolbar({ title, visible, onToggleToc }: ReaderToolbarProp
         <div className="flex items-center rounded-full border border-black/5 bg-white/92 p-1 shadow-[0_12px_30px_rgba(0,0,0,0.10)] backdrop-blur-xl">
           <ToolbarIconButton
             icon={<Menu className="h-5 w-5 stroke-[1.75]" />}
-            label="TOC"
+            label="Table of contents"
             onClick={onToggleToc}
           />
           <ToolbarIconButton
-            disabled
-            icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />}
-            label="Bookmarks"
+            icon={<Palette className="h-5 w-5 stroke-[1.75]" />}
+            label={nextThemeLabel(readingSettings.theme)}
+            onClick={onCycleTheme}
           />
-          <ToolbarIconButton disabled icon={<NotebookTabs className="h-5 w-5 stroke-[1.75]" />} label="Notes" />
+          <ToolbarIconButton
+            icon={<NotebookTabs className="h-5 w-5 stroke-[1.75]" />}
+            label="Annotations"
+            onClick={onToggleAnnotations}
+          />
         </div>
       </div>
 
@@ -76,17 +119,36 @@ export function ReaderToolbar({ title, visible, onToggleToc }: ReaderToolbarProp
         ].join(" ")}
       >
         <div className="flex items-center rounded-full border border-black/5 bg-white/92 p-1 shadow-[0_12px_30px_rgba(0,0,0,0.10)] backdrop-blur-xl">
-          <button
-            type="button"
-            disabled
-            className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold tracking-[-0.02em] text-black/70"
-            aria-label="Reader settings"
-            title="Reader settings"
-          >
-            Aa
-          </button>
-          <ToolbarIconButton disabled icon={<Search className="h-5 w-5 stroke-[1.75]" />} label="Search" />
-          <ToolbarIconButton disabled icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />} label="Notes" />
+          <DisplaySettingsPopover
+            disabled={false}
+            onUpdate={onUpdateReadingSettings}
+            settings={readingSettings}
+          />
+
+          <ToolbarIconButton
+            disabled={!canTranslate}
+            icon={<Languages className="h-5 w-5 stroke-[1.75]" />}
+            label="Translate book"
+            onClick={onOpenTranslationSheet}
+          />
+
+          {showBilingualToggle ? (
+            <button
+              type="button"
+              onClick={onToggleBilingualMode}
+              className="rounded-full px-3 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.05] hover:text-black/85"
+            >
+              Bilingual
+            </button>
+          ) : null}
+
+          {canExport ? (
+            <ToolbarIconButton
+              icon={<Download className="h-5 w-5 stroke-[1.75]" />}
+              label="Export bilingual ePub"
+              onClick={onExport}
+            />
+          ) : null}
         </div>
       </div>
     </div>
