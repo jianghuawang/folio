@@ -822,7 +822,7 @@ Do NOT touch:
 
 ## Task 14: Reader Display Preferences & Position Persistence
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -883,7 +883,7 @@ Do NOT touch:
 
 ## Task 15: Reader Selection Popup & Highlights UI
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -943,7 +943,7 @@ Do NOT touch:
 
 ## Task 16: Reader Notes & Annotations Drawer UI
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -1004,7 +1004,7 @@ Do NOT touch:
 
 ## Task 17: Reader Translation UI & Bilingual Mode
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 
@@ -1065,7 +1065,7 @@ Do NOT touch:
 
 ## Task 18: Quote Cover Generator UI & Save Flow
 
-**Status:** [ ] Not Started
+**Status:** [x] Finished
 
 ### Scope
 

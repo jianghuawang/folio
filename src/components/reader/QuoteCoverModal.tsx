@@ -186,24 +186,22 @@ export function QuoteCoverModal({
 
           <div className="grid grid-cols-[400px_minmax(0,1fr)]">
             <div className="border-r border-black/10 p-6">
-              <div className="rounded-[30px] border border-black/10 bg-white/60 p-5 shadow-[0_20px_52px_rgba(0,0,0,0.08)] backdrop-blur-[18px]">
-                <div className="overflow-hidden rounded-[28px] bg-white/50">
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl}
-                      alt="Quote cover preview"
-                      className="h-[400px] w-[400px] object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-[400px] w-[400px] items-center justify-center text-sm text-black/45">
-                      {isRenderingPreview ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
-                        "Preview unavailable"
-                      )}
-                    </div>
-                  )}
-                </div>
+              <div className="overflow-hidden rounded-[28px] border border-black/10 bg-white/54 shadow-[0_20px_52px_rgba(0,0,0,0.08)] backdrop-blur-[18px]">
+                {previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="Quote cover preview"
+                    className="h-[400px] w-[400px] object-cover"
+                  />
+                ) : (
+                  <div className="flex h-[400px] w-[400px] items-center justify-center text-sm text-black/45">
+                    {isRenderingPreview ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      "Preview unavailable"
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
