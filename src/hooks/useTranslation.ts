@@ -6,6 +6,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import {
   cancelTranslation,
   exportBilingualEpub,
+  FolioError,
   getTranslationJob,
   getTranslations,
   pauseTranslation,
@@ -54,8 +55,33 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const [progressEvent, setProgressEvent] = useState<TranslationProgressEvent | null>(null);
   const [pausedEvent, setPausedEvent] = useState<TranslationPausedEvent | null>(null);
   const [latestError, setLatestError] = useState<TranslationErrorEvent | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
+
+  const invalidateTranslationQueries = async (language: string | null = targetLanguage) => {
+    const invalidations = [
+      queryClient.invalidateQueries({ queryKey: ["translation-language", bookId] }),
+      queryClient.invalidateQueries({ queryKey: ["translation-job", bookId] }),
+      queryClient.invalidateQueries({ queryKey: ["translations", bookId] }),
+    ];
+
+    if (language) {
+      invalidations.push(
+        queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, language] }),
+        queryClient.invalidateQueries({ queryKey: ["translations", bookId, language] }),
+      );
+    }
+
+    await Promise.all(invalidations);
+  };
+
+  const activateLanguage = async (language: string) => {
+    setStartError(null);
+    setCurrentLanguage(language);
+    setBilingualMode(true);
+    await invalidateTranslationQueries(language);
+  };
 
   const availableLanguageQuery = useQuery({
     queryKey: ["translation-language", bookId],
@@ -94,6 +120,10 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   }, [availableLanguageQuery.data, currentLanguage, setBilingualMode, setCurrentLanguage]);
 
   useEffect(() => {
+    setStartError(null);
+  }, [bookId]);
+
+  useEffect(() => {
     if (
       jobQuery.data?.status !== "paused" ||
       pausedEvent?.reason !== "rate_limit" ||
@@ -128,14 +158,6 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
 
     let active = true;
 
-    const invalidateTranslationQueries = () => {
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["translation-language", bookId] }),
-        queryClient.invalidateQueries({ queryKey: ["translation-job", bookId] }),
-        queryClient.invalidateQueries({ queryKey: ["translations", bookId] }),
-      ]);
-    };
-
     const jobId = jobQuery.data?.id ?? null;
 
     const registerListeners = async () => {
@@ -147,7 +169,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
           }
 
           setProgressEvent(event.payload);
-          invalidateTranslationQueries();
+          void invalidateTranslationQueries();
         },
       );
 
@@ -158,7 +180,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
             return;
           }
 
-          invalidateTranslationQueries();
+          void invalidateTranslationQueries();
         },
       );
 
@@ -168,7 +190,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         }
 
         setLatestError(event.payload);
-        invalidateTranslationQueries();
+        void invalidateTranslationQueries();
       });
 
       const unlistenPaused = await listen<TranslationPausedEvent>("translation:paused", (event) => {
@@ -177,7 +199,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         }
 
         setPausedEvent(event.payload);
-        invalidateTranslationQueries();
+        void invalidateTranslationQueries();
       });
 
       const unlistenExportProgress = await listen<ExportProgressEvent>("export:progress", (event) => {
@@ -212,14 +234,34 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const startMutation = useMutation({
     mutationFn: (payload: { language: string; replaceExisting?: boolean }) =>
       startTranslation(bookId as string, payload.language, payload.replaceExisting),
+    onMutate: () => {
+      setStartError(null);
+    },
     onSuccess: async (job) => {
-      setCurrentLanguage(job.target_language);
-      setBilingualMode(true);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["translation-language", bookId] }),
-        queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, job.target_language] }),
-        queryClient.invalidateQueries({ queryKey: ["translations", bookId, job.target_language] }),
-      ]);
+      await activateLanguage(job.target_language);
+    },
+    onError: (error) => {
+      if (!(error instanceof FolioError)) {
+        setStartError("Failed to start translation.");
+        return;
+      }
+
+      if (error.code === "NO_API_KEY") {
+        setStartError("Translation requires a saved API key in Settings.");
+        return;
+      }
+
+      if (error.code === "KEYCHAIN_ERROR") {
+        setStartError("Unable to access macOS Keychain. Please try again.");
+        return;
+      }
+
+      if (error.code === "TRANSLATION_FAILED") {
+        setStartError("This book could not be prepared for translation.");
+        return;
+      }
+
+      setStartError("Failed to start translation.");
     },
   });
 
@@ -317,6 +359,10 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     }
 
     if (job.status === "complete") {
+      if (job.failed_paragraph_locators.length > 0) {
+        return `${job.failed_paragraph_locators.length} paragraphs could not be translated.`;
+      }
+
       return "Translation complete.";
     }
 
@@ -328,6 +374,8 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     bilingualMode,
     canExport,
     currentLanguage: targetLanguage,
+    activateLanguage,
+    clearStartError: () => setStartError(null),
     exportMutation,
     exportProgress,
     job: jobQuery.data ?? null,
@@ -337,6 +385,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     retryMutation,
     setBilingualMode,
     setCurrentLanguage,
+    startError,
     startMutation,
     translations: translationsQuery.data ?? [],
     translationsQuery,

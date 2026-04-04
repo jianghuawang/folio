@@ -51,7 +51,7 @@ function ToolbarIconButton({
       disabled={disabled}
       onClick={onClick}
       className={[
-        "h-10 w-10 rounded-full disabled:opacity-100",
+        "h-10 w-10 rounded-full disabled:cursor-not-allowed disabled:opacity-40",
         active
           ? "bg-black/10 text-black"
           : "text-black/70 hover:bg-black/[0.05] hover:text-black/85",

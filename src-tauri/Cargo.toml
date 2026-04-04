@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "~2.5.0", features = [] }
 
 [dependencies]
-keyring = "~3.3.0"
+keyring = { version = "~3.3.0", features = ["apple-native"] }
 minidom = "~0.15.2"
 quick-xml = { version = "~0.36.0", features = ["serialize"] }
 reqwest = { version = "~0.12.0", default-features = false, features = ["json", "rustls-tls"] }

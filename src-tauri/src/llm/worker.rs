@@ -14,8 +14,8 @@ use minidom::Element;
 use quick_xml::{events::Event, Reader};
 use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager};
-use tokio::{task::JoinHandle, time::sleep};
+use tauri::{async_runtime, async_runtime::JoinHandle, AppHandle, Emitter, Manager};
+use tokio::time::sleep;
 use zip::ZipArchive;
 
 use crate::{
@@ -95,7 +95,7 @@ pub fn spawn_translation_worker(
     control.cancel.store(false, Ordering::SeqCst);
     control.pause.store(false, Ordering::SeqCst);
 
-    tokio::spawn(async move {
+    async_runtime::spawn(async move {
         let job_id = job.id.clone();
         let result = run_translation_worker(
             app_handle.clone(),

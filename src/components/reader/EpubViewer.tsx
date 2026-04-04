@@ -62,6 +62,11 @@ export function EpubViewer({
   const onNoteActivateRef = useRef(onNoteActivate);
   const onPositionRestoreErrorRef = useRef(onPositionRestoreError);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const highlightsRef = useRef(highlights);
+  const notesRef = useRef(notes);
+  const readingSettingsRef = useRef(readingSettings);
+  const translationsRef = useRef(translations);
+  const bilingualModeRef = useRef(bilingualMode);
   const saveTimeoutRef = useRef<number | null>(null);
   const latestLocationRef = useRef<ReaderLocationState | null>(null);
   const lastPersistedLocationKeyRef = useRef(
@@ -94,6 +99,26 @@ export function EpubViewer({
   useEffect(() => {
     onSelectionChangeRef.current = onSelectionChange;
   }, [onSelectionChange]);
+
+  useEffect(() => {
+    highlightsRef.current = highlights;
+  }, [highlights]);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    readingSettingsRef.current = readingSettings;
+  }, [readingSettings]);
+
+  useEffect(() => {
+    translationsRef.current = translations;
+  }, [translations]);
+
+  useEffect(() => {
+    bilingualModeRef.current = bilingualMode;
+  }, [bilingualMode]);
 
   useEffect(() => {
     latestLocationRef.current = book.last_position_cfi
@@ -209,6 +234,14 @@ export function EpubViewer({
         }
 
         bridgeRef.current = bridge;
+        bridge.applyReadingSettings(readingSettingsRef.current);
+        bridge.setHighlights(highlightsRef.current);
+        bridge.setNotes(notesRef.current);
+        bridge.setTranslations({
+          enabled: bilingualModeRef.current,
+          targetLanguage: null,
+          translations: translationsRef.current,
+        });
         onBridgeReadyRef.current(bridge, toc);
         setIsLoading(false);
       },

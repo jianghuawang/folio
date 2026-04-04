@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AnnotationsDrawer } from "@/components/reader/AnnotationsDrawer";
 import { EpubViewer } from "@/components/reader/EpubViewer";
@@ -34,6 +36,8 @@ import type {
   ReaderTocItem,
 } from "@/lib/epub-bridge";
 import { useReaderStore } from "@/store/readerStore";
+
+const API_KEY_STATUS_CHANGED_EVENT = "settings:api-key-status-changed";
 
 function FullScreenError({
   message,
@@ -103,6 +107,7 @@ export default function ReaderWindow() {
   const updateNoteMutation = useUpdateNote();
   const deleteNoteMutation = useDeleteNote();
   const apiKeyStatusQuery = useApiKeyStatus();
+  const refetchApiKeyStatus = apiKeyStatusQuery.refetch;
   const selectionController = useEpubSelection();
   const translation = useTranslation(bookId, book?.title ?? "Book");
   const clearSelection = selectionController.clearSelection;
@@ -143,6 +148,33 @@ export default function ReaderWindow() {
   const allHighlights = highlightsQuery.data ?? [];
 
   useEffect(() => {
+    const currentWindow = getCurrentWindow();
+    let unlistenFocus: (() => void) | null = null;
+    let unlistenApiKeyStatusChanged: (() => void) | null = null;
+
+    void currentWindow
+      .onFocusChanged(({ payload }) => {
+        if (payload) {
+          void refetchApiKeyStatus();
+        }
+      })
+      .then((unlisten) => {
+        unlistenFocus = unlisten;
+      });
+
+    void listen(API_KEY_STATUS_CHANGED_EVENT, () => {
+      void refetchApiKeyStatus();
+    }).then((unlisten) => {
+      unlistenApiKeyStatusChanged = unlisten;
+    });
+
+    return () => {
+      unlistenFocus?.();
+      unlistenApiKeyStatusChanged?.();
+    };
+  }, [refetchApiKeyStatus]);
+
+  useEffect(() => {
     resetReaderState();
     setTocItems([]);
   }, [book?.id, resetReaderState]);
@@ -167,6 +199,11 @@ export default function ReaderWindow() {
 
     if (translation.latestError.error_message === "Invalid API key.") {
       window.alert("Translation failed: Invalid API key. Please check your API key in Settings.");
+      return;
+    }
+
+    if (translation.latestError.paragraph_index === -1) {
+      window.alert(`Translation failed: ${translation.latestError.error_message}`);
     }
   }, [translation.latestError]);
 
@@ -697,17 +734,40 @@ export default function ReaderWindow() {
         <TranslationSheet
           availableLanguages={translation.availableLanguages}
           currentLanguage={translation.currentLanguage}
+          errorMessage={translation.startError}
           job={translation.job}
           onOpenChange={(open) => {
             if (open) {
+              translation.clearStartError();
               openTranslationSheet();
             } else {
+              translation.clearStartError();
               closeTranslationSheet();
             }
           }}
           onStart={async (language, replaceExisting) => {
-            await translation.startMutation.mutateAsync({ language, replaceExisting });
-            closeTranslationSheet();
+            try {
+              await translation.startMutation.mutateAsync({ language, replaceExisting });
+              closeTranslationSheet();
+            } catch (error) {
+              if (error instanceof FolioError) {
+                if (error.code === "JOB_ALREADY_EXISTS") {
+                  await translation.activateLanguage(language);
+                  closeTranslationSheet();
+                  return;
+                }
+
+                if (error.code === "TRANSLATION_ALREADY_COMPLETE") {
+                  await translation.activateLanguage(language);
+                  return;
+                }
+
+                if (error.code === "NO_API_KEY") {
+                  void refetchApiKeyStatus();
+                  return;
+                }
+              }
+            }
           }}
           open={translationSheetOpen}
           pending={translation.startMutation.isPending}

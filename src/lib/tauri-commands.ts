@@ -394,15 +394,32 @@ export async function clearApiKey(): Promise<void> {
   }
 }
 
+function normalizeConnectionTestErrorMessage(message: string): string {
+  if (message === "Invalid API key.") {
+    return "401 Unauthorized. Check your API key.";
+  }
+
+  return message;
+}
+
 export async function testOpenRouterConnection(
   apiKey: string | null,
   model: string,
 ): Promise<ConnectionTestResult> {
   try {
-    return await invokeTauri<ConnectionTestResult>("test_openrouter_connection", {
+    const result = await invokeTauri<ConnectionTestResult>("test_openrouter_connection", {
       apiKey,
       model,
     });
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: normalizeConnectionTestErrorMessage(result.error),
+      };
+    }
+
+    return result;
   } catch (error) {
     if (error instanceof FolioError) {
       throw error;

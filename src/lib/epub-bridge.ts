@@ -569,6 +569,51 @@ export async function createEpubBridge({
   applyReadingSettingsToRendition(rendition, readingSettings);
   updateReaderMargins(rendition);
 
+  const resolveProgress = (cfi: string, fallbackProgress?: number | null) => {
+    let percentage: number | null = null;
+
+    try {
+      if (cfi && epubBook.locations.length() > 0) {
+        percentage = epubBook.locations.percentageFromCfi(cfi);
+      }
+    } catch {
+      percentage = null;
+    }
+
+    if (!Number.isFinite(percentage ?? NaN) && Number.isFinite(fallbackProgress ?? NaN)) {
+      percentage = fallbackProgress ?? null;
+    }
+
+    if (
+      !Number.isFinite(percentage ?? NaN) &&
+      cfi &&
+      book.last_position_cfi?.trim() === cfi &&
+      Number.isFinite(book.reading_progress)
+    ) {
+      percentage = book.reading_progress;
+    }
+
+    if (!Number.isFinite(percentage ?? NaN)) {
+      return 0;
+    }
+
+    return Math.min(Math.max(percentage ?? 0, 0), 1);
+  };
+
+  const invalidateRenderedAnnotations = () => {
+    renderedHighlights.forEach((highlight) => {
+      try {
+        rendition.annotations.remove(highlight.cfi_range, "highlight");
+      } catch {
+        // ignore annotation cleanup failures
+      }
+    });
+
+    renderedHighlights = [];
+    lastAppliedHighlightSignature = "";
+    lastAppliedNoteSignature = "";
+  };
+
   const applyHighlights = () => {
     const nextSignature = currentHighlights
       .map((highlight) => `${highlight.id}:${highlight.cfi_range}:${highlight.color}`)
@@ -777,23 +822,16 @@ export async function createEpubBridge({
       href = "";
     }
 
-    let progress = 0;
-    try {
-      progress = epubBook.locations.percentageFromCfi(cfi);
-    } catch {
-      progress = 0;
-    }
-
     return {
       chapterTitle: resolveChapterTitle(href, tocItems, book.title),
-      progress: Number.isFinite(progress) ? progress : 0,
+      progress: resolveProgress(cfi),
     };
   };
 
   const handleResize = () => {
     updateReaderMargins(rendition);
-    applyTranslations();
-    applyNotes();
+    invalidateRenderedAnnotations();
+    void refreshCurrentView().catch(() => undefined);
   };
 
   const handleReaderKeyDown = (event: KeyboardEvent) => {
@@ -825,14 +863,10 @@ export async function createEpubBridge({
   const handleRelocated = async (location: RenditionLocation) => {
     const currentCfi = location.start?.cfi ?? location.cfi ?? "";
     const currentHref = location.start?.href ?? location.href ?? "";
-    let percentage =
-      currentCfi && epubBook.locations
-        ? epubBook.locations.percentageFromCfi(currentCfi)
-        : location.start?.percentage ?? location.percentage ?? 0;
-
-    if (!Number.isFinite(percentage)) {
-      percentage = 0;
-    }
+    const percentage = resolveProgress(
+      currentCfi,
+      location.start?.percentage ?? location.percentage ?? null,
+    );
 
     onLocationChange({
       atEnd: Boolean(location.atEnd),
@@ -880,6 +914,7 @@ export async function createEpubBridge({
 
   rendition.hooks.content.register((contents: Contents) => {
     let lastSelectionSnapshot: ReaderSelectionSnapshot | null = null;
+    let lastSelectedCfiRange: { timestamp: number; value: string } | null = null;
     let selectionSyncTimeout: number | null = null;
     let selectionSyncFrame: number | null = null;
 
@@ -904,6 +939,11 @@ export async function createEpubBridge({
     };
 
     const handleContentsSelected = (cfiRange: string) => {
+      lastSelectedCfiRange = {
+        timestamp: Date.now(),
+        value: cfiRange,
+      };
+
       // Use a small delay to ensure the browser selection is fully materialized
       // before we try to capture it. The "selected" event can fire before
       // getSelection() returns the new selection in some cases.
@@ -927,6 +967,7 @@ export async function createEpubBridge({
 
       if (!selectionSnapshot) {
         lastSelectionSnapshot = null;
+        lastSelectedCfiRange = null;
 
         if ((selection?.isCollapsed ?? true) && Date.now() >= suppressSelectionClearUntil) {
           onSelectionChange?.(null);
@@ -936,7 +977,16 @@ export async function createEpubBridge({
       }
 
       try {
-        const cfiRange = contents.cfiFromRange(selectionSnapshot.range);
+        const cfiRange =
+          lastSelectedCfiRange &&
+          Date.now() - lastSelectedCfiRange.timestamp <= SELECTION_SNAPSHOT_TTL_MS
+            ? lastSelectedCfiRange.value
+            : contents.cfiFromRange(selectionSnapshot.range);
+
+        lastSelectedCfiRange = {
+          timestamp: Date.now(),
+          value: cfiRange,
+        };
         emitSelection(cfiRange, contents, selectionSnapshot);
       } catch {}
     };
@@ -1053,10 +1103,9 @@ export async function createEpubBridge({
 
       lastAppliedSettingsSignature = nextSignature;
       currentReadingSettings = settings;
-      lastAppliedNoteSignature = "";
       applyReadingSettingsToRendition(rendition, settings);
-      applyTranslations();
-      applyNotes();
+      invalidateRenderedAnnotations();
+      void refreshCurrentView().catch(() => undefined);
     },
     clearSelection,
     destroy: () => {
@@ -1191,6 +1240,7 @@ export async function createEpubBridge({
       .generate(1024)
       .then(async () => {
         if (!destroyed) {
+          invalidateRenderedAnnotations();
           await syncCurrentLocation(rendition, handleRelocated);
         }
       })
