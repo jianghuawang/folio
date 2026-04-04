@@ -307,6 +307,24 @@ export async function deleteNote(id: string): Promise<void> {
   }
 }
 
+export async function exportHighlights(bookId: string, savePath: string): Promise<void> {
+  try {
+    await invokeTauri<void>("export_highlights", {
+      bookId,
+      savePath,
+    });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError(
+      "EXPORT_HIGHLIGHTS_FAILED",
+      `Failed to export highlights: ${String(error)}`,
+    );
+  }
+}
+
 export async function getAppSettings(): Promise<AppSettings> {
   try {
     return await invokeTauri<AppSettings>("get_app_settings");

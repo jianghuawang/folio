@@ -1,4 +1,4 @@
-import { FileImage, Pencil } from "lucide-react";
+import { FileImage, Pencil, Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import type { HighlightColor } from "@/types/annotation";
@@ -24,10 +24,12 @@ interface SelectionPopupProps {
   onColorSelect: (color: HighlightColor) => void;
   onOpenNote: () => void;
   onOpenQuote: () => void;
+  onRemoveHighlight?: () => void;
   position: {
     left: number;
     top: number;
   };
+  showRemoveHighlight?: boolean;
   visible: boolean;
 }
 
@@ -36,7 +38,9 @@ export function SelectionPopup({
   onColorSelect,
   onOpenNote,
   onOpenQuote,
+  onRemoveHighlight,
   position,
+  showRemoveHighlight = false,
   visible,
 }: SelectionPopupProps) {
   if (!visible) {
@@ -95,6 +99,21 @@ export function SelectionPopup({
         >
           <FileImage className="h-4 w-4" />
         </button>
+
+        {showRemoveHighlight && onRemoveHighlight ? (
+          <>
+            <div className="h-6 w-px bg-black/10" />
+
+            <button
+              type="button"
+              onClick={onRemoveHighlight}
+              className="inline-flex h-8 items-center justify-center rounded-full px-3 text-black/70 transition hover:bg-black/[0.04] hover:text-[--color-destructive]"
+              aria-label="Remove highlight"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );

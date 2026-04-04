@@ -2,7 +2,7 @@ import Epub, { type Book as EpubBook, type NavItem, type Rendition } from "epubj
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type Contents from "epubjs/types/contents";
 
-import type { Highlight } from "@/types/annotation";
+import type { Highlight, Note } from "@/types/annotation";
 import type { Book } from "@/types/book";
 import type { ReadingFontFamily, ReadingSettings, ReadingTheme } from "@/types/settings";
 import type { Translation } from "@/types/translation";
@@ -32,6 +32,24 @@ export interface ReaderSelectionPayload {
   text: string;
 }
 
+export interface ReaderHighlightActivationPayload {
+  cfiRange: string;
+  highlightId: string;
+  position: {
+    left: number;
+    top: number;
+  };
+  text: string;
+}
+
+export interface ReaderNoteActivationPayload {
+  note: Note;
+  position: {
+    left: number;
+    top: number;
+  };
+}
+
 export interface ReaderAnnotationLocation {
   chapterTitle: string;
   progress: number;
@@ -54,6 +72,7 @@ export interface EpubBridge {
   prev: () => Promise<void>;
   resolveAnnotationLocation: (cfi: string) => Promise<ReaderAnnotationLocation | null>;
   setHighlights: (highlights: Highlight[]) => void;
+  setNotes: (notes: Note[]) => void;
   setTranslations: (payload: {
     enabled: boolean;
     targetLanguage: string | null;
@@ -65,7 +84,9 @@ interface CreateEpubBridgeOptions {
   book: Book;
   container: HTMLElement;
   onError: (error: Error) => void;
+  onHighlightActivate?: (payload: ReaderHighlightActivationPayload) => void;
   onLocationChange: (location: ReaderLocationState) => void;
+  onNoteActivate?: (payload: ReaderNoteActivationPayload) => void;
   onPositionRestoreError?: () => void;
   onReady: (payload: { bridge: EpubBridge; toc: ReaderTocItem[] }) => void;
   onSelectionChange?: (selection: ReaderSelectionPayload | null) => void;
@@ -87,6 +108,10 @@ const MIN_HORIZONTAL_DELTA = 8;
 const INITIAL_DISPLAY_TIMEOUT_MS = 4000;
 const BOOK_READY_TIMEOUT_MS = 4000;
 const SELECTION_SNAPSHOT_TTL_MS = 500;
+const NOTE_MARKER_SIZE_PX = 10;
+const NOTE_MARKER_LAYER_ATTRIBUTE = "data-folio-note-marker-layer";
+const NOTE_MARKER_ATTRIBUTE = "data-folio-note-marker";
+const NOTE_MARKER_DEFAULT_COLOR = "#FFD60A";
 
 const FONT_STACKS: Record<ReadingFontFamily, string> = {
   Georgia: "Georgia, serif",
@@ -275,6 +300,20 @@ function attachWheelNavigation(
   };
 }
 
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(
+    target.closest("input, textarea, select, button, a, [contenteditable='true']"),
+  );
+}
+
 function registerReaderThemes(rendition: Rendition) {
   (Object.keys(THEME_STYLES) as ReadingTheme[]).forEach((themeKey) => {
     const styles = THEME_STYLES[themeKey];
@@ -428,6 +467,47 @@ function createSelectionSnapshot(selection: Selection): ReaderSelectionSnapshot 
   };
 }
 
+function stopEvent(event: Event) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function getEventTargetRect(event: Event) {
+  const target =
+    event.currentTarget instanceof Element
+      ? event.currentTarget
+      : event.target instanceof Element
+        ? event.target
+        : null;
+
+  return {
+    frameRect:
+      target?.ownerDocument?.defaultView?.frameElement instanceof HTMLElement
+        ? target.ownerDocument.defaultView.frameElement.getBoundingClientRect()
+        : null,
+    targetRect: target?.getBoundingClientRect() ?? null,
+  };
+}
+
+function resolvePopupPositionFromEvent(event: Event) {
+  const { frameRect, targetRect } = getEventTargetRect(event);
+  const localLeft = targetRect ? targetRect.left + targetRect.width / 2 : 0;
+  const localTop = targetRect ? targetRect.top : 0;
+
+  return {
+    left: clampSelectionCoordinate(
+      (frameRect?.left ?? 0) + localLeft,
+      24,
+      window.innerWidth - 24,
+    ),
+    top: clampSelectionCoordinate(
+      (frameRect?.top ?? 0) + localTop,
+      24,
+      window.innerHeight - 24,
+    ),
+  };
+}
+
 function isFreshSelectionSnapshot(snapshot: ReaderSelectionSnapshot | null) {
   if (!snapshot) {
     return false;
@@ -436,11 +516,24 @@ function isFreshSelectionSnapshot(snapshot: ReaderSelectionSnapshot | null) {
   return Date.now() - snapshot.timestamp <= SELECTION_SNAPSHOT_TTL_MS;
 }
 
+function getNoteMarkerRect(range: Range) {
+  const rects = Array.from(range.getClientRects());
+  return rects[rects.length - 1] ?? range.getBoundingClientRect();
+}
+
+function clearInjectedNoteMarkers(contents: Contents) {
+  contents.document
+    .querySelectorAll<HTMLElement>(`[${NOTE_MARKER_LAYER_ATTRIBUTE}]`)
+    .forEach((node) => node.remove());
+}
+
 export async function createEpubBridge({
   book,
   container,
   onError,
+  onHighlightActivate,
   onLocationChange,
+  onNoteActivate,
   onPositionRestoreError,
   onReady,
   onSelectionChange,
@@ -460,13 +553,17 @@ export async function createEpubBridge({
   let tocItems: ReaderTocItem[] = [];
   let lastSelectionWindow: Window | null = null;
   let lastAppliedHighlightSignature = "";
+  let lastAppliedNoteSignature = "";
   let lastAppliedSettingsSignature = "";
   let lastAppliedTranslationSignature = "";
   let currentHighlights: Highlight[] = [];
+  let currentNotes: Note[] = [];
+  let currentReadingSettings = readingSettings;
   let renderedHighlights: Highlight[] = [];
   let currentTranslations = new Map<string, Translation>();
   let bilingualModeEnabled = false;
   let initialDisplayComplete = false;
+  let suppressSelectionClearUntil = 0;
 
   registerReaderThemes(rendition);
   applyReadingSettingsToRendition(rendition, readingSettings);
@@ -494,8 +591,19 @@ export async function createEpubBridge({
         rendition.annotations.add(
           "highlight",
           highlight.cfi_range,
-          {},
-          highlight.id as never,
+          {
+            highlightId: highlight.id,
+          },
+          ((event: Event) => {
+            stopEvent(event);
+            suppressSelectionClearUntil = Date.now() + 150;
+            onHighlightActivate?.({
+              cfiRange: highlight.cfi_range,
+              highlightId: highlight.id,
+              position: resolvePopupPositionFromEvent(event),
+              text: highlight.text_excerpt,
+            });
+          }) as never,
           "hl",
           {
             fill: highlight.color,
@@ -509,6 +617,102 @@ export async function createEpubBridge({
 
     renderedHighlights = currentHighlights;
     lastAppliedHighlightSignature = nextSignature;
+  };
+
+  const applyNotes = () => {
+    const nextSignature = [
+      currentReadingSettings.theme,
+      currentHighlights.map((highlight) => `${highlight.id}:${highlight.color}`).join("|"),
+      currentNotes.map((note) => `${note.id}:${note.cfi}:${note.highlight_id ?? ""}`).join("|"),
+    ].join("::");
+
+    if (nextSignature === lastAppliedNoteSignature) {
+      return;
+    }
+
+    const highlightById = new Map<string, Highlight>(
+      currentHighlights.map((highlight): [string, Highlight] => [highlight.id, highlight]),
+    );
+
+    const contentsList =
+      (
+        rendition as unknown as {
+          getContents?: () => Contents[];
+        }
+      ).getContents?.() ?? [];
+
+    contentsList.forEach((contents) => {
+      clearInjectedNoteMarkers(contents);
+
+      if (currentNotes.length === 0) {
+        return;
+      }
+
+      const markerLayer = contents.document.createElement("div");
+      markerLayer.setAttribute(NOTE_MARKER_LAYER_ATTRIBUTE, "true");
+      markerLayer.style.position = "fixed";
+      markerLayer.style.inset = "0";
+      markerLayer.style.pointerEvents = "none";
+      markerLayer.style.zIndex = "2147483647";
+
+      currentNotes.forEach((note) => {
+        try {
+          const range = contents.range(note.cfi);
+          if (!range) {
+            return;
+          }
+
+          const rect = getNoteMarkerRect(range);
+          if (!rect || rect.width <= 0 || rect.height <= 0) {
+            return;
+          }
+
+          const marker = contents.document.createElement("button");
+          marker.type = "button";
+          marker.setAttribute("aria-label", "Open note");
+          marker.setAttribute(NOTE_MARKER_ATTRIBUTE, note.id);
+          marker.style.position = "absolute";
+          marker.style.left = `${Math.max(0, rect.right - NOTE_MARKER_SIZE_PX)}px`;
+          marker.style.top = `${Math.max(0, rect.bottom - NOTE_MARKER_SIZE_PX / 2)}px`;
+          marker.style.width = `${NOTE_MARKER_SIZE_PX}px`;
+          marker.style.height = `${NOTE_MARKER_SIZE_PX}px`;
+          marker.style.padding = "0";
+          marker.style.margin = "0";
+          marker.style.borderRadius = "999px";
+          marker.style.border = `1.5px solid ${THEME_STYLES[currentReadingSettings.theme].background}`;
+          marker.style.background = highlightById.get(note.highlight_id ?? "")?.color ?? NOTE_MARKER_DEFAULT_COLOR;
+          marker.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.18)";
+          marker.style.cursor = "pointer";
+          marker.style.pointerEvents = "auto";
+
+          const handleNotePointerEvent = (event: Event) => {
+            stopEvent(event);
+            suppressSelectionClearUntil = Date.now() + 150;
+          };
+
+          const handleNoteClick = (event: Event) => {
+            handleNotePointerEvent(event);
+            onNoteActivate?.({
+              note,
+              position: resolvePopupPositionFromEvent(event),
+            });
+          };
+
+          marker.addEventListener("mousedown", handleNotePointerEvent);
+          marker.addEventListener("touchstart", handleNotePointerEvent);
+          marker.addEventListener("click", handleNoteClick);
+          markerLayer.appendChild(marker);
+        } catch {
+          // ignore note marker render failures
+        }
+      });
+
+      if (markerLayer.childElementCount > 0) {
+        contents.document.body.appendChild(markerLayer);
+      }
+    });
+
+    lastAppliedNoteSignature = nextSignature;
   };
 
   const injectTranslationsIntoContents = (contents: Contents) => {
@@ -589,6 +793,33 @@ export async function createEpubBridge({
   const handleResize = () => {
     updateReaderMargins(rendition);
     applyTranslations();
+    applyNotes();
+  };
+
+  const handleReaderKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+      return;
+    }
+
+    if (isEditableTarget(event.target)) {
+      return;
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      void rendition.prev();
+      return;
+    }
+
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      void rendition.next();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      onSelectionChange?.(null);
+    }
   };
 
   const handleRelocated = async (location: RenditionLocation) => {
@@ -615,6 +846,7 @@ export async function createEpubBridge({
     onSelectionChange?.(null);
     applyTranslations();
     applyHighlights();
+    applyNotes();
   };
 
   const emitSelection = (
@@ -686,8 +918,20 @@ export async function createEpubBridge({
     };
 
     const syncSelectionFromDom = () => {
-      const selectionSnapshot = readLiveSelectionSnapshot();
+      const selection = contents.window.getSelection();
+      const selectionSnapshot = selection ? createSelectionSnapshot(selection) : null;
+
+      if (selectionSnapshot) {
+        lastSelectionSnapshot = selectionSnapshot;
+      }
+
       if (!selectionSnapshot) {
+        lastSelectionSnapshot = null;
+
+        if ((selection?.isCollapsed ?? true) && Date.now() >= suppressSelectionClearUntil) {
+          onSelectionChange?.(null);
+        }
+
         return;
       }
 
@@ -719,22 +963,6 @@ export async function createEpubBridge({
       }, 32);
     };
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        void rendition.prev();
-      }
-
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        void rendition.next();
-      }
-
-      if (event.key === "Escape") {
-        onSelectionChange?.(null);
-      }
-    };
-
     const handleMouseDown = () => {
       if (contents.window.getSelection()?.isCollapsed ?? true) {
         onSelectionChange?.(null);
@@ -747,7 +975,7 @@ export async function createEpubBridge({
 
     contents.on("selected", handleContentsSelected);
     contents.document.addEventListener("selectionchange", scheduleSelectionSync);
-    contents.document.addEventListener("keydown", handleKeyDown);
+    contents.document.addEventListener("keydown", handleReaderKeyDown);
     contents.document.addEventListener("mousedown", handleMouseDown);
     contents.document.addEventListener("mouseup", handleMouseUp);
     contents.document.addEventListener("touchend", scheduleSelectionSync);
@@ -771,6 +999,7 @@ export async function createEpubBridge({
 
     injectTranslationsIntoContents(contents);
     applyHighlights();
+    applyNotes();
 
     contentCleanupCallbacks.add(() => {
       contents.off("selected", handleContentsSelected);
@@ -781,11 +1010,12 @@ export async function createEpubBridge({
         window.cancelAnimationFrame(selectionSyncFrame);
       }
       contents.document.removeEventListener("selectionchange", scheduleSelectionSync);
-      contents.document.removeEventListener("keydown", handleKeyDown);
+      contents.document.removeEventListener("keydown", handleReaderKeyDown);
       contents.document.removeEventListener("mousedown", handleMouseDown);
       contents.document.removeEventListener("mouseup", handleMouseUp);
       contents.document.removeEventListener("touchend", scheduleSelectionSync);
       clearInjectedTranslations(contents);
+      clearInjectedNoteMarkers(contents);
       unlistenDocumentWheel();
       unlistenWindowWheel();
       unlistenBodyWheel();
@@ -797,6 +1027,7 @@ export async function createEpubBridge({
   contentCleanupCallbacks.add(attachWheelNavigation(container, wheelNavigationHandler.handleWheel));
 
   rendition.on("relocated", handleRelocated);
+  window.addEventListener("keydown", handleReaderKeyDown);
   window.addEventListener("resize", handleResize);
 
   const refreshCurrentView = async () => {
@@ -806,6 +1037,7 @@ export async function createEpubBridge({
     if (!currentCfi) {
       applyTranslations();
       applyHighlights();
+      applyNotes();
       return;
     }
 
@@ -820,8 +1052,11 @@ export async function createEpubBridge({
       }
 
       lastAppliedSettingsSignature = nextSignature;
+      currentReadingSettings = settings;
+      lastAppliedNoteSignature = "";
       applyReadingSettingsToRendition(rendition, settings);
       applyTranslations();
+      applyNotes();
     },
     clearSelection,
     destroy: () => {
@@ -831,6 +1066,7 @@ export async function createEpubBridge({
 
       destroyed = true;
       rendition.off("relocated", handleRelocated);
+      window.removeEventListener("keydown", handleReaderKeyDown);
       window.removeEventListener("resize", handleResize);
       wheelNavigationHandler.cleanup();
       contentCleanupCallbacks.forEach((cleanup) => cleanup());
@@ -846,6 +1082,11 @@ export async function createEpubBridge({
     setHighlights: (highlights) => {
       currentHighlights = highlights;
       applyHighlights();
+      applyNotes();
+    },
+    setNotes: (notes) => {
+      currentNotes = notes;
+      applyNotes();
     },
     setTranslations: ({ enabled, targetLanguage, translations }) => {
       const nextSignature = `${enabled}:${targetLanguage ?? ""}:${translations

@@ -18,20 +18,19 @@ import { useEpubSelection } from "@/hooks/useEpubSelection";
 import {
   useAddHighlight,
   useDeleteHighlight,
+  useExportHighlights,
   useHighlights,
   useUpdateHighlight,
 } from "@/hooks/useHighlights";
 import { useDeleteNote, useNotes, useSaveNote, useUpdateNote } from "@/hooks/useNotes";
-import {
-  useReadingSettings,
-  useUpdateReadingSettings,
-} from "@/hooks/useReadingSettings";
+import { FolioError } from "@/lib/tauri-commands";
+import { useReadingSettings, useUpdateReadingSettings } from "@/hooks/useReadingSettings";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useWindowState } from "@/hooks/useWindowState";
-import type { Highlight } from "@/types/annotation";
+import type { Highlight, Note } from "@/types/annotation";
 import type {
   EpubBridge,
   ReaderLocationState,
+  ReaderNoteActivationPayload,
   ReaderTocItem,
 } from "@/lib/epub-bridge";
 import { useReaderStore } from "@/store/readerStore";
@@ -62,21 +61,30 @@ function FullScreenError({
   );
 }
 
-function nextTheme(currentTheme: "dark" | "light" | "sepia") {
-  if (currentTheme === "light") {
-    return "sepia";
-  }
-
-  if (currentTheme === "sepia") {
-    return "dark";
-  }
-
-  return "light";
-}
-
 function getHighlightStartCfi(highlight: Highlight) {
   const [startFragment] = highlight.cfi_range.split(",");
   return startFragment.endsWith(")") ? startFragment : highlight.cfi_range;
+}
+
+function getLegacyNoteOnlyHighlight(note: Note, highlightById: Map<string, Highlight>) {
+  if (!note.highlight_id) {
+    return null;
+  }
+
+  const linkedHighlight = highlightById.get(note.highlight_id);
+  if (!linkedHighlight) {
+    return null;
+  }
+
+  if (
+    linkedHighlight.color === "#FFD60A" &&
+    linkedHighlight.cfi_range === note.cfi &&
+    linkedHighlight.text_excerpt === note.text_excerpt
+  ) {
+    return linkedHighlight;
+  }
+
+  return null;
 }
 
 export default function ReaderWindow() {
@@ -89,6 +97,7 @@ export default function ReaderWindow() {
   const addHighlightMutation = useAddHighlight(bookId);
   const updateHighlightMutation = useUpdateHighlight();
   const deleteHighlightMutation = useDeleteHighlight();
+  const exportHighlightsMutation = useExportHighlights(bookId, book?.title ?? "Book");
   const notesQuery = useNotes(bookId);
   const saveNoteMutation = useSaveNote(bookId);
   const updateNoteMutation = useUpdateNote();
@@ -96,7 +105,9 @@ export default function ReaderWindow() {
   const apiKeyStatusQuery = useApiKeyStatus();
   const selectionController = useEpubSelection();
   const translation = useTranslation(bookId, book?.title ?? "Book");
-  const { isFocused } = useWindowState();
+  const clearSelection = selectionController.clearSelection;
+  const handleSelectionChange = selectionController.handleSelectionChange;
+  const showHighlightSelection = selectionController.showHighlightSelection;
 
   const bridge = useReaderStore((state) => state.bridge);
   const closeAnnotations = useReaderStore((state) => state.closeAnnotations);
@@ -118,42 +129,17 @@ export default function ReaderWindow() {
   const tocOpen = useReaderStore((state) => state.tocOpen);
   const toggleToc = useReaderStore((state) => state.toggleToc);
   const annotationsOpen = useReaderStore((state) => state.annotationsOpen);
+  const annotationsTab = useReaderStore((state) => state.annotationsTab);
+  const openAnnotations = useReaderStore((state) => state.openAnnotations);
+  const setAnnotationsTab = useReaderStore((state) => state.setAnnotationsTab);
   const toggleAnnotations = useReaderStore((state) => state.toggleAnnotations);
+  const openToc = useReaderStore((state) => state.openToc);
   const translationSheetOpen = useReaderStore((state) => state.translationSheetOpen);
   const openTranslationSheet = useReaderStore((state) => state.openTranslationSheet);
 
   const [tocItems, setTocItems] = useState<ReaderTocItem[]>([]);
-  const [toolbarVisible, setToolbarVisible] = useState(true);
-  const toolbarTimeoutRef = useRef<number | null>(null);
   const lastTranslationErrorRef = useRef<string | null>(null);
-
-  const showToolbar = useCallback(() => {
-    setToolbarVisible(true);
-
-    if (toolbarTimeoutRef.current) {
-      window.clearTimeout(toolbarTimeoutRef.current);
-    }
-
-    toolbarTimeoutRef.current = window.setTimeout(() => {
-      setToolbarVisible(false);
-    }, 2000);
-  }, []);
-
-  useEffect(() => {
-    showToolbar();
-
-    return () => {
-      if (toolbarTimeoutRef.current) {
-        window.clearTimeout(toolbarTimeoutRef.current);
-      }
-    };
-  }, [showToolbar]);
-
-  useEffect(() => {
-    if (isFocused) {
-      showToolbar();
-    }
-  }, [isFocused, showToolbar]);
+  const allHighlights = highlightsQuery.data ?? [];
 
   useEffect(() => {
     resetReaderState();
@@ -183,6 +169,14 @@ export default function ReaderWindow() {
     }
   }, [translation.latestError]);
 
+  const highlightById = useMemo(
+    () =>
+      new Map<string, Highlight>(
+        allHighlights.map((highlight): [string, Highlight] => [highlight.id, highlight]),
+      ),
+    [allHighlights],
+  );
+
   useEffect(() => {
     if (!bridge) {
       clearAnnotationMeta();
@@ -190,7 +184,7 @@ export default function ReaderWindow() {
     }
 
     const items = [
-      ...(highlightsQuery.data ?? []).map((highlight) => ({
+      ...allHighlights.map((highlight) => ({
         cfi: getHighlightStartCfi(highlight),
         key: `highlight:${highlight.id}`,
       })),
@@ -217,9 +211,9 @@ export default function ReaderWindow() {
       cancelled = true;
     };
   }, [
+    allHighlights,
     bridge,
     clearAnnotationMeta,
-    highlightsQuery.data,
     notesQuery.data,
     setAnnotationMeta,
   ]);
@@ -240,11 +234,11 @@ export default function ReaderWindow() {
   const currentReadingSettings = readingSettingsQuery.data;
   const highlightItems = useMemo(
     () =>
-      (highlightsQuery.data ?? []).map((highlight) => ({
+      allHighlights.map((highlight) => ({
         highlight,
         meta: useReaderStore.getState().annotationMetaByKey[`highlight:${highlight.id}`] ?? null,
       })),
-    [highlightsQuery.data],
+    [allHighlights],
   );
   const noteItems = useMemo(
     () =>
@@ -260,8 +254,8 @@ export default function ReaderWindow() {
       return null;
     }
 
-    return (highlightsQuery.data ?? []).find((highlight) => highlight.id === selection.highlightId) ?? null;
-  }, [highlightsQuery.data, selection?.highlightId]);
+    return allHighlights.find((highlight) => highlight.id === selection.highlightId) ?? null;
+  }, [allHighlights, selection?.highlightId]);
 
   const activeNote = useMemo(() => {
     if (!noteEditor) {
@@ -270,6 +264,26 @@ export default function ReaderWindow() {
 
     return (notesQuery.data ?? []).find((note) => note.id === noteEditor.noteId) ?? null;
   }, [noteEditor, notesQuery.data]);
+
+  const exportHighlightsErrorMessage = useMemo(() => {
+    if (!(exportHighlightsMutation.error instanceof FolioError)) {
+      return null;
+    }
+
+    if (exportHighlightsMutation.error.code === "NO_HIGHLIGHTS") {
+      return "No highlights to export yet.";
+    }
+
+    if (exportHighlightsMutation.error.code === "UNSUPPORTED_EXPORT_FORMAT") {
+      return "Choose a .md or .csv file.";
+    }
+
+    if (exportHighlightsMutation.error.code === "WRITE_ERROR") {
+      return "Could not write the export file.";
+    }
+
+    return "Failed to export highlights.";
+  }, [exportHighlightsMutation.error]);
 
   const handleColorSelect = async (color: Highlight["color"]) => {
     if (!bookId || !selection) {
@@ -283,21 +297,14 @@ export default function ReaderWindow() {
           color,
           id: selection.highlightId,
         });
-        return;
+      } else {
+        await addHighlightMutation.mutateAsync({
+          cfiRange: selection.cfiRange,
+          color,
+          textExcerpt: selection.text,
+        });
       }
-
-      const highlight = await addHighlightMutation.mutateAsync({
-        cfiRange: selection.cfiRange,
-        color,
-        textExcerpt: selection.text,
-      });
-
-      selectionController.showHighlightSelection({
-        cfiRange: selection.cfiRange,
-        highlightId: highlight.id,
-        position: selection.position,
-        text: selection.text,
-      });
+      clearSelection();
     } catch (mutationError) {
       const message =
         mutationError instanceof Error
@@ -312,17 +319,20 @@ export default function ReaderWindow() {
       return;
     }
 
+    const nextSelection = selection;
     const existingNote =
-      selection.highlightId
-        ? (notesQuery.data ?? []).find((note) => note.highlight_id === selection.highlightId)
+      nextSelection.highlightId
+        ? (notesQuery.data ?? []).find((note) => note.highlight_id === nextSelection.highlightId)
         : null;
 
     openNoteEditor({
-      cfi: selection.cfiRange,
-      highlightId: selection.highlightId,
+      cfi: nextSelection.cfiRange,
+      highlightId: nextSelection.highlightId,
       noteId: existingNote?.id ?? null,
-      textExcerpt: selection.text,
+      position: nextSelection.position,
+      textExcerpt: nextSelection.text,
     });
+    clearSelection();
   };
 
   const handleSaveNote = async (body: string) => {
@@ -332,22 +342,46 @@ export default function ReaderWindow() {
 
     try {
       if (noteEditor.noteId) {
-        await updateNoteMutation.mutateAsync({
+        const updatedNote = await updateNoteMutation.mutateAsync({
           body,
           bookId,
           id: noteEditor.noteId,
         });
+
+        if (!updatedNote && activeNote) {
+          const linkedHighlight = getLegacyNoteOnlyHighlight(activeNote, highlightById);
+          if (linkedHighlight) {
+            await deleteHighlightMutation
+              .mutateAsync({
+                bookId,
+                id: linkedHighlight.id,
+              })
+              .catch(() => undefined);
+          }
+        }
       } else {
+        let highlightId = noteEditor.highlightId;
+
+        if (!highlightId) {
+          const createdHighlight = await addHighlightMutation.mutateAsync({
+            cfiRange: noteEditor.cfi,
+            color: "#FFD60A",
+            textExcerpt: noteEditor.textExcerpt,
+          });
+
+          highlightId = createdHighlight.id;
+        }
+
         await saveNoteMutation.mutateAsync({
           body,
           cfi: noteEditor.cfi,
-          highlightId: noteEditor.highlightId,
+          highlightId,
           textExcerpt: noteEditor.textExcerpt,
         });
       }
 
       closeNoteEditor();
-      selectionController.clearSelection();
+      clearSelection();
     } catch (mutationError) {
       const message =
         mutationError instanceof Error
@@ -358,7 +392,7 @@ export default function ReaderWindow() {
   };
 
   const handleDeleteNote = async () => {
-    if (!bookId || !noteEditor?.noteId) {
+    if (!bookId || !noteEditor?.noteId || !activeNote) {
       return;
     }
 
@@ -371,20 +405,55 @@ export default function ReaderWindow() {
       bookId,
       id: noteEditor.noteId,
     });
+
+    const linkedHighlight = getLegacyNoteOnlyHighlight(activeNote, highlightById);
+    if (linkedHighlight) {
+      await deleteHighlightMutation
+        .mutateAsync({
+          bookId,
+          id: linkedHighlight.id,
+        })
+        .catch(() => undefined);
+    }
+
     closeNoteEditor();
   };
 
   const handleJumpToHighlight = (highlight: Highlight) => {
     void bridge?.goToCfi(getHighlightStartCfi(highlight));
     closeAnnotations();
-    showToolbar();
   };
 
   const handleJumpToNote = (note: NonNullable<(typeof notesQuery.data)>[number]) => {
     void bridge?.goToCfi(note.cfi);
     closeAnnotations();
-    showToolbar();
   };
+
+  const handleHighlightActivate = useCallback(
+    (payload: {
+      cfiRange: string;
+      highlightId: string;
+      position: { left: number; top: number };
+      text: string;
+    }) => {
+      showHighlightSelection(payload);
+    },
+    [showHighlightSelection],
+  );
+
+  const handleNoteActivate = useCallback(
+    ({ note, position }: ReaderNoteActivationPayload) => {
+      clearSelection();
+      openNoteEditor({
+        cfi: note.cfi,
+        highlightId: note.highlight_id,
+        noteId: note.id,
+        position,
+        textExcerpt: note.text_excerpt,
+      });
+    },
+    [clearSelection, openNoteEditor],
+  );
 
   const handleDeleteHighlight = (highlightId: string) => {
     if (!bookId) {
@@ -402,6 +471,21 @@ export default function ReaderWindow() {
     });
   };
 
+  const handleRemoveHighlightFromPopup = () => {
+    if (!bookId || !selection?.highlightId) {
+      return;
+    }
+
+    void deleteHighlightMutation
+      .mutateAsync({
+        bookId,
+        id: selection.highlightId,
+      })
+      .finally(() => {
+        clearSelection();
+      });
+  };
+
   const handleDeleteDrawerNote = (noteId: string) => {
     if (!bookId) {
       return;
@@ -412,11 +496,32 @@ export default function ReaderWindow() {
       return;
     }
 
-    void deleteNoteMutation.mutateAsync({
-      bookId,
-      id: noteId,
-    });
+    const note = (notesQuery.data ?? []).find((item) => item.id === noteId);
+    const linkedHighlight = note ? getLegacyNoteOnlyHighlight(note, highlightById) : null;
+
+    void deleteNoteMutation
+      .mutateAsync({
+        bookId,
+        id: noteId,
+      })
+      .then(async () => {
+        if (linkedHighlight) {
+          await deleteHighlightMutation
+            .mutateAsync({
+              bookId,
+              id: linkedHighlight.id,
+            })
+            .catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
   };
+
+  useEffect(() => {
+    if (selection && noteEditor) {
+      closeNoteEditor();
+    }
+  }, [closeNoteEditor, noteEditor, selection]);
 
   if (!bookId) {
     return <FullScreenError message="Missing required ?bookId query parameter." />;
@@ -449,42 +554,39 @@ export default function ReaderWindow() {
   }
 
   return (
-    <main
-      className="h-screen overflow-hidden bg-[--color-bg-window] text-[--color-text-primary]"
-      onClick={showToolbar}
-      onMouseMove={showToolbar}
-    >
+    <main className="h-screen overflow-hidden bg-[--color-bg-window] text-[--color-text-primary]">
       <div className="group relative h-full w-full overflow-hidden">
         <EpubViewer
           bilingualMode={translation.bilingualMode}
           book={book}
-          highlights={highlightsQuery.data ?? []}
+          highlights={allHighlights}
+          notes={notesQuery.data ?? []}
           onBridgeReady={handleBridgeReady}
+          onHighlightActivate={handleHighlightActivate}
           onLocationChange={handleLocationChange}
+          onNoteActivate={handleNoteActivate}
           onPositionRestoreError={handlePositionRestoreError}
-          onSelectionChange={selectionController.handleSelectionChange}
+          onSelectionChange={handleSelectionChange}
           readingSettings={currentReadingSettings}
           translations={translation.translations}
         />
 
         <ReaderToolbar
+          annotationsOpen={annotationsOpen}
+          annotationsTab={annotationsTab}
           canExport={translation.canExport}
           canTranslate={apiKeyStatusQuery.data?.configured ?? false}
-          onCycleTheme={() =>
-            void updateReadingSettingsMutation.mutateAsync({
-              theme: nextTheme(currentReadingSettings.theme),
-            })
-          }
           onExport={() => void translation.exportMutation.mutateAsync()}
+          onOpenHighlights={() => toggleAnnotations("highlights")}
+          onOpenNotes={() => toggleAnnotations("notes")}
           onOpenTranslationSheet={openTranslationSheet}
-          onToggleAnnotations={toggleAnnotations}
           onToggleBilingualMode={() => translation.setBilingualMode(!translation.bilingualMode)}
           onToggleToc={toggleToc}
           onUpdateReadingSettings={(payload) => void updateReadingSettingsMutation.mutateAsync(payload)}
           readingSettings={currentReadingSettings}
           showBilingualToggle={Boolean(translation.currentLanguage)}
+          tocOpen={tocOpen}
           title={book.title}
-          visible={toolbarVisible || tocOpen || annotationsOpen}
         />
 
         <TranslationBanner
@@ -508,14 +610,11 @@ export default function ReaderWindow() {
 
         <PageChevrons
           disabled={!bridge}
-          visible={toolbarVisible}
           onPrev={() => {
             void bridge?.prev();
-            showToolbar();
           }}
           onNext={() => {
             void bridge?.next();
-            showToolbar();
           }}
         />
 
@@ -527,7 +626,7 @@ export default function ReaderWindow() {
           open={tocOpen}
           onOpenChange={(open) => {
             if (open) {
-              toggleToc();
+              openToc();
             } else {
               useReaderStore.getState().closeToc();
             }
@@ -535,7 +634,6 @@ export default function ReaderWindow() {
           onSelect={(href) => {
             void bridge?.goToHref(href);
             useReaderStore.getState().closeToc();
-            showToolbar();
           }}
         />
 
@@ -548,8 +646,10 @@ export default function ReaderWindow() {
               useReaderStore.getState().openQuoteCover(selection.text);
             }
           }}
+          onRemoveHighlight={handleRemoveHighlightFromPopup}
           position={selection?.position ?? { left: 0, top: 0 }}
-          visible={Boolean(selection)}
+          showRemoveHighlight={Boolean(selection?.highlightId)}
+          visible={Boolean(selection) && !noteEditor}
         />
 
         {noteEditor ? (
@@ -558,11 +658,16 @@ export default function ReaderWindow() {
             onCancel={closeNoteEditor}
             onDelete={activeNote ? handleDeleteNote : undefined}
             onSave={handleSaveNote}
+            position={noteEditor.position}
             textExcerpt={noteEditor.textExcerpt}
           />
         ) : null}
 
         <AnnotationsDrawer
+          activeTab={annotationsTab}
+          exportDisabled={allHighlights.length === 0}
+          exportErrorMessage={exportHighlightsErrorMessage}
+          exportPending={exportHighlightsMutation.isPending}
           highlightError={Boolean(highlightsQuery.error)}
           highlightItems={highlightItems}
           highlightsLoading={highlightsQuery.isLoading}
@@ -571,17 +676,19 @@ export default function ReaderWindow() {
           notesLoading={notesQuery.isLoading}
           onDeleteHighlight={handleDeleteHighlight}
           onDeleteNote={handleDeleteDrawerNote}
+          onExportHighlights={() => exportHighlightsMutation.mutate()}
           onJumpToHighlight={handleJumpToHighlight}
           onJumpToNote={handleJumpToNote}
           onOpenChange={(open) => {
             if (open) {
-              useReaderStore.getState().openAnnotations();
+              openAnnotations(annotationsTab);
             } else {
               closeAnnotations();
             }
           }}
           onRetryHighlights={() => void highlightsQuery.refetch()}
           onRetryNotes={() => void notesQuery.refetch()}
+          onTabChange={setAnnotationsTab}
           open={annotationsOpen}
         />
 

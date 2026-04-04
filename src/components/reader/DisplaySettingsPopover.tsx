@@ -88,14 +88,14 @@ export function DisplaySettingsPopover({
         <div
           role="dialog"
           aria-label="Display settings"
-          className="absolute right-0 top-[calc(100%+12px)] z-30 w-[320px] rounded-[20px] border border-black/5 bg-white/96 p-5 text-black shadow-[0_20px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl"
+          className="absolute right-0 top-[calc(100%+12px)] z-30 w-[320px] rounded-[20px] border border-[#e7e2db] bg-white p-5 text-black shadow-[0_20px_50px_rgba(0,0,0,0.16)]"
         >
           <div className="space-y-5">
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-black/45">
                 Font Size
               </p>
-              <div className="flex items-center justify-between rounded-2xl bg-black/[0.04] px-3 py-2">
+              <div className="flex items-center justify-between rounded-2xl border border-[#ece7df] bg-[#f5f2ec] px-3 py-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -131,7 +131,7 @@ export function DisplaySettingsPopover({
                 onChange={(event) =>
                   onUpdate({ font_family: event.target.value as ReadingSettings["font_family"] })
                 }
-                className="h-11 w-full rounded-2xl border border-black/10 bg-black/[0.04] px-3 text-sm text-black outline-none transition focus:border-black/20"
+                className="h-11 w-full rounded-2xl border border-[#ece7df] bg-[#f5f2ec] px-3 text-sm text-black outline-none transition focus:border-black/20"
               >
                 {FONT_FAMILY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -152,7 +152,7 @@ export function DisplaySettingsPopover({
                     line_height: Number(event.target.value) as ReadingSettings["line_height"],
                   })
                 }
-                className="h-11 w-full rounded-2xl border border-black/10 bg-black/[0.04] px-3 text-sm text-black outline-none transition focus:border-black/20"
+                className="h-11 w-full rounded-2xl border border-[#ece7df] bg-[#f5f2ec] px-3 text-sm text-black outline-none transition focus:border-black/20"
               >
                 {LINE_HEIGHT_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>

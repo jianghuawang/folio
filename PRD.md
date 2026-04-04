@@ -105,10 +105,10 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 - ✓ Default reading settings: font size 18px, font family "Georgia", line height 1.6, horizontal margins 80px (desktop), theme Light (white background, #1a1a1a text)
 - ✓ Three themes available: Light, Sepia (background #f5f0e8, text #3b2f2f), Dark (background #1c1c1e, text #e5e5ea) — selectable from toolbar
 - ✓ Paginated layout (not scroll): content fills the viewport and user navigates page by page
-- ✓ Left/right arrow keys navigate pages; clicking left 25% / right 25% of viewport navigates pages; swipe gestures on trackpad navigate pages
-- ✓ On-screen left/right chevron buttons (< >) appear on hover near screen edges, 40px hit area
+- ✓ ArrowRight and ArrowDown navigate to the next page; ArrowLeft and ArrowUp navigate to the previous page; clicking left 25% / right 25% of viewport navigates pages; swipe gestures on trackpad navigate pages
+- ✓ On-screen left/right chevron buttons (< >) stay visible near screen edges, 40px hit area
 - ✓ Bottom progress bar shows reading progress as percentage (0–100%), formatted as "{chapter title} · {X}%"
-- ✓ Table of Contents (TOC) accessible from toolbar button; slides in as a left drawer showing all chapters as a list; clicking a chapter navigates to it
+- ✓ Table of Contents (TOC) accessible from the left menu cluster; opens as a floating contents dropdown showing all chapters as a list; clicking a chapter navigates to it
 
 **Edge cases:**
 - ePub has DRM → display error: "This book is DRM-protected and cannot be opened in Folio."
@@ -190,12 +190,14 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **User story:** As a user, I can view all my highlights and notes for a book in one panel so that I can review my annotations without scrolling through the whole book.
 
 **Acceptance criteria:**
-- ✓ Annotations panel accessed via toolbar button (bookmark icon); slides in as a right drawer (280px wide)
-- ✓ Panel shows two tabs: "Highlights" and "Notes"
+- ✓ Annotations are accessed from the same floating top-center menu cluster used for Contents; the cluster contains three icons: Contents, Highlights, and Notes
+- ✓ Clicking the Highlights or Notes icon opens a floating dropdown panel under the menu cluster using the same visual style as the Contents menu: rounded card, soft shadow, subtle translucency, and a centered notch pointing back to the trigger cluster
+- ✓ Panel shows two tabs: "Highlights" and "Notes", with the clicked icon deciding the initial active tab
 - ✓ Highlights tab: chronological list (oldest first) of all highlights; each row shows: color dot, excerpt (max 2 lines), page position percentage
 - ✓ Notes tab: chronological list; each row shows: excerpt (max 2 lines), first 60 characters of note text, position percentage
 - ✓ Clicking any row navigates the reader to that CFI and closes the panel
 - ✓ Each row has a delete icon (trash, appears on hover) that deletes the highlight/note after confirmation
+- ✓ Panel header includes an "Export Highlights" action that writes the current book's highlights to a file
 
 **Edge cases:**
 - No annotations → show: "No highlights yet. Select text to highlight." / "No notes yet."
@@ -280,6 +282,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 **Acceptance criteria:**
 - ✓ Settings popover accessed via "Aa" toolbar button in reader; opens as a popover (not a modal, does not block reading) positioned below the button
+- ✓ Settings popover is fully opaque. Reader text must never show through the panel or its control rows.
 - ✓ Controls in popover:
   - Font Size: "A−" [BUTTON] · {size}px · "A+" [BUTTON]; range 12–32px, step 2px
   - Font: [DROPDOWN] Georgia (serif) | San Francisco (sans-serif) | Palatino (serif) | Menlo (monospace)
@@ -321,14 +324,32 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **User story:** As a user, I can view and navigate the book's table of contents so that I can jump directly to any chapter.
 
 **Acceptance criteria:**
-- ✓ TOC drawer opened via list-icon button in reader toolbar; slides in from the left (280px wide), overlapping the content area, with a semi-transparent backdrop
+- ✓ TOC is opened from the left-most icon inside the floating top-center menu cluster
+- ✓ Opening TOC shows a floating dropdown panel visually matching the provided reference image: rounded white/glass card, soft blur, subtle border, top notch pointing to the trigger cluster, and no side drawer animation
 - ✓ TOC lists all chapters from the ePub NCX/Nav document as a flat list (nested items indented 16px per level, max 3 levels)
-- ✓ Current chapter row is highlighted (blue tint background)
-- ✓ Clicking a chapter navigates the reader and closes the drawer
-- ✓ Drawer closed by clicking the backdrop or clicking the toolbar button again
+- ✓ Current chapter row is highlighted with a rounded gray-tint selection row
+- ✓ Clicking a chapter navigates the reader and closes the dropdown
+- ✓ Menu closes by clicking outside it or clicking the active trigger again
 
 **Edge cases:**
-- ePub has no TOC document → drawer shows: "This book has no table of contents."
+- ePub has no TOC document → dropdown shows: "This book has no table of contents."
+
+---
+
+### Feature 16: Export Highlights
+
+**User story:** As a user, I can export the current book's highlights to a file so that I can review or reuse them outside Folio.
+
+**Acceptance criteria:**
+- ✓ "Export Highlights" is available inside the annotations dropdown panel
+- ✓ Clicking it opens a save flow and writes a file for the current book's highlights
+- ✓ Supported output is based on the chosen file extension: `.md` exports Markdown, `.csv` exports CSV
+- ✓ Exported rows include highlight excerpt, color, created timestamp, and CFI locator
+- ✓ Export completes without exposing internal database IDs or file paths
+
+**Edge cases:**
+- No highlights exist → export action is disabled and helper text explains there is nothing to export
+- Write failure → inline error in the annotations dropdown with a retry affordance
 
 ---
 
@@ -363,12 +384,6 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 **User story:** As a user, I can sync my library, highlights, and notes across multiple Macs via iCloud so that my data follows me.
 - Excluded from MVP: all data is local-only
-
----
-
-### V2-Feature 5: Export Annotations
-
-**User story:** As a user, I can export all my highlights and notes for a book as a Markdown or CSV file.
 
 ---
 
@@ -411,16 +426,16 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 | Component | Data Displayed | Actions Supported |
 |---|---|---|
-| Reader Toolbar | Book title, chapter title, TOC icon, Annotations icon, "Aa" settings, theme icons, Translate icon, Bilingual toggle, Export icon | Open panels, change settings, trigger translation |
+| Reader Toolbar | Left-aligned menu cluster (Contents / Highlights / Notes), centered book title, floating top-right utility cluster ("Aa", Translate, Bilingual, export as needed) | Open floating menus, change settings, trigger translation |
 | Reading Area | ePub content (text, images) | Select text, navigate via click/keyboard |
 | Page Navigation Chevrons | < > arrows | Previous/next page |
 | Progress Bar | Chapter title, percentage | Visual only |
 | Text Selection Popup | Color swatches, Note icon, Translate icon, Quote icon | Apply highlight, open note editor, create quote |
-| TOC Drawer | Chapter list from ePub | Navigate to chapter |
-| Annotations Drawer | Highlights list, Notes list | Navigate to annotation, delete annotation |
+| TOC Dropdown Menu | Chapter list from ePub | Navigate to chapter |
+| Annotations Dropdown Menu | Highlights list, Notes list, export action | Navigate to annotation, delete annotation, export highlights |
 | Note Editor Panel | Selected text excerpt, note textarea | Save/cancel/delete note |
 | Translation Progress Banner | Paragraph X of N, Pause/Cancel buttons | Control translation |
-| Display Settings Popover | Font size, font family, line height, theme | Adjust reading settings |
+| Display Settings Popover | Font size, font family, line height, theme | Adjust reading settings with a fully opaque popover |
 | Quote Cover Creator Modal | Cover preview, controls | Edit quote, select theme, save image |
 
 ---
@@ -439,7 +454,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 ## 5b. Interface Design — ASCII Wireframes
 
-> Folio's UI mirrors the macOS Books app aesthetic: dark sidebar with translucent sections, book grid with cover thumbnails and progress badges, and a clean two-column reader that shows toolbar only on hover/click.
+> Folio's UI mirrors the macOS Books app aesthetic: dark sidebar with translucent sections, book grid with cover thumbnails and progress badges, and a clean two-column reader with persistent top reader controls and persistent page chevrons.
 
 ---
 
@@ -559,11 +574,11 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 ---
 
-### Reader Window — Clean (no toolbar, macOS Books style)
+### Reader Window — Default Reading State
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●                        {Book Title}                                       │
+│ ● ● ●  [≡] [🔖] [🗒]         {Book Title}         [Aa] [🌐] [BI] [↓]         │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
 │         Lorem ipsum dolor sit amet,        Sed ut perspiciatis unde omnis       │
@@ -590,48 +605,15 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> Toolbar is hidden by default. It appears on mouse hover or click anywhere. `<` `>` chevrons near edges appear on hover only. Page bottom shows chapter title and progress percentage. Two-column layout mirrors macOS Books.
-
----
-
-### Reader Window — Toolbar Visible (on hover/click)
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [≡ TOC] [⬜ Theme] [⬚ Annot]    {Book Title}    [AA] [🔍] [🌐] [🔖]   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│         Lorem ipsum dolor sit amet,        Sed ut perspiciatis unde omnis       │
-│      consectetur adipiscing elit. Sed do   iste natus error sit voluptatem      │
-│      eiusmod tempor incididunt ut labore   accusantium doloremque laudantium,   │
-│      et dolore magna aliqua. Ut enim ad    totam rem aperiam eaque ipsa quae    │
-│      minim veniam, quis nostrud exercit.   ab illo inventore veritatis et       │
-│                                            quasi architecto beatae vitae.       │
-│         Duis aute irure dolor in           Nemo enim ipsam voluptatem quia      │
-│      reprehenderit in voluptate velit      voluptas sit aspernatur aut odit     │
-│      esse cillum dolore eu fugiat nulla    aut fugit, sed quia consequuntur     │
-│      pariatur. Excepteur sint occaecat     magni dolores eos qui ratione        │
-│      cupidatat non proident, culpa qui     voluptatem sequi nesciunt.           │
-│      officia deserunt mollit anim.                                              │
-│                                            Neque porro quisquam est, qui       │
-│         At vero eos et accusamus et         dolorem ipsum quia dolor sit amet,  │
-│      iusto odio dignissimos ducimus qui    consectetur, adipisci velit, sed     │
-│      blanditiis praesentium deleniti.      quia non numquam eius modi tempora   │
-│                                            incidunt ut labore et dolore magnam  │
-│                                            aliquam quaerat voluptatem.          │
-│                                                                       [avatar]  │
-│                                                                                 │
-│  <                       {Chapter Title} · 42%                               > │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+> The top menu clusters and `<` `>` page chevrons remain visible at all times while reading. Page bottom shows chapter title and progress percentage. Two-column layout mirrors macOS Books.
 
 **Toolbar button legend:**
 ```
 Left cluster:                           Right cluster:
-  [≡]   Table of Contents (TOC drawer)    [AA]  Font size / theme settings popover
-  [⬜]   Theme toggle (Light/Sepia/Dark)   [🔍]  Search in book
-  [⬚]   Annotations panel (right drawer)  [🌐]  Translate book (bilingual toggle)
-                                          [🔖]  Annotations panel shortcut
+  [≡]   Contents dropdown                  [Aa]  Font size / theme settings popover
+  [🔖]   Highlights dropdown               [🌐]  Translate book
+  [🗒]   Notes dropdown                    [BI]  Bilingual toggle when translations exist
+                                           [↓]  Export bilingual ePub when available
 ```
 
 ---
@@ -652,7 +634,7 @@ Left cluster:                           Right cluster:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [≡ TOC] [⬜ Theme] [⬚ Annot]    {Book Title}    [AA] [🔍] [🌐] [🔖]   │
+│ ● ● ●  [≡] [🔖] [🗒]         {Book Title}         [Aa] [🌐] [BI] [↓]         │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
 │         Lorem ipsum dolor sit amet...                                           │
@@ -686,51 +668,49 @@ Left cluster:                           Right cluster:
 
 ---
 
-### Reader Window — TOC Drawer (slides in from left)
+### Reader Window — Contents Dropdown Menu
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [≡ TOC] [⬜ Theme] [⬚ Annot]    {Book Title}    [AA] [🔍] [🌐] [🔖]   │
-├──────────────────────┬──────────────────────────────────────────────────────────┤
-│  Table of Contents   │                                                          │
-│  ─────────────────   │   Lorem ipsum dolor sit amet, consectetur adipiscing.   │
-│  ▶ Chapter 1         │   Sed do eiusmod tempor incididunt ut labore et dolore.  │
-│    Chapter 2         │                                                          │
-│    Chapter 3         │   Ut enim ad minim veniam, quis nostrud exercitation     │
-│    ├ Part I          │   ullamco laboris nisi ut aliquip ex ea commodo.         │
-│    └ Part II         │                                                          │
-│    Chapter 4         │                                                          │
-│    Chapter 5         │                         (backdrop dims rest of reader)  │
-│    Chapter 6         │                                                          │
-│                      │                                                          │
-│  <                       {Chapter Title} · 42%                               > │
-└──────────────────────┴──────────────────────────────────────────────────────────┘
+  ╭──────────────────────────────╮
+  │   [≡]   [🔖]   [📝]         │                        {Book Title}
+  ╰────────────┬─────────────────╯
+               ▼
+        ╭─────────────────────────────────────────────────────────────╮
+        │                          Contents                           │
+        │  ────────────────────────────────────────────────────────   │
+        │  Book Info                                               2 │
+        │  Part I                                                  2 │
+        │    1                                                    10 │
+        │    2                                                    13 │
+        │    3                                                    16 │
+        │  Part II                                                18 │
+        │    1                                                    19 │
+        │    2                                                    20 │
+        │    3                                                    24 │
+        │                                                           │
+        │  (rounded floating panel with soft blur and shadow)       │
+        ╰─────────────────────────────────────────────────────────────╯
 ```
 
 ---
 
-### Reader Window — Annotations Drawer (slides in from right)
+### Reader Window — Annotations Dropdown Menu
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [≡ TOC] [⬜ Theme] [⬚ Annot]    {Book Title}    [AA] [🔍] [🌐] [🔖]   │
-├───────────────────────────────────────────┬─────────────────────────────────────┤
-│                                           │  Annotations                    [✕] │
-│   Lorem ipsum dolor sit amet...           │  [Highlights ●] [Notes]             │
-│                                           │  ─────────────────────────────────  │
-│                                           │  ● "Lorem ipsum dolor sit           │
-│                                           │    amet, consectetur…"              │
-│                                           │    Chapter 1 · 12%           [🗑]   │
-│                                           │  ─────────────────────────────────  │
-│                                           │  ● "Sed ut perspiciatis             │
-│                                           │    unde omnis iste natus…"          │
-│                                           │    Chapter 3 · 38%           [🗑]   │
-│                                           │  ─────────────────────────────────  │
-│                                           │  ● "At vero eos et accusamus"       │
-│                                           │    Chapter 5 · 71%           [🗑]   │
-│                                           │                                     │
-│  <                       {Chapter Title} · 42%                               > │
-└───────────────────────────────────────────┴─────────────────────────────────────┘
+  ╭──────────────────────────────╮
+  │   [≡]   [🔖]   [📝]         │                        {Book Title}
+  ╰────────────┬─────────────────╯
+               ▼
+        ╭─────────────────────────────────────────────────────────────╮
+        │                        Annotations                    [⇩]   │
+        │  [ Highlights ] [ Notes ]                                   │
+        │  ────────────────────────────────────────────────────────   │
+        │  ● "Lorem ipsum dolor sit amet…"          Chapter 1 · 12%  │
+        │  ● "Sed ut perspiciatis unde…"            Chapter 3 · 38%  │
+        │  ● "At vero eos et accusamus…"            Chapter 5 · 71%  │
+        │                                                           │
+        │  Export Highlights                                         │
+        ╰─────────────────────────────────────────────────────────────╯
 ```
 
 ---
@@ -739,17 +719,17 @@ Left cluster:                           Right cluster:
 
 ```
                                         ┌────────────────────────────────────┐
-                                        │  Font Size                         │
-                                        │  [A−]  ·  18px  ·  [A+]           │
+                                        │  FONT SIZE                         │
+                                        │  [−]        18px             [+]  │
                                         │                                    │
-                                        │  Font                              │
+                                        │  FONT                              │
                                         │  [DROPDOWN: Georgia            ▾]  │
                                         │                                    │
-                                        │  Line Height                       │
+                                        │  LINE HEIGHT                       │
                                         │  [DROPDOWN: Normal (1.6)       ▾]  │
                                         │                                    │
-                                        │  Theme                             │
-                                        │  [◻ Light] [🟤 Sepia] [◼ Dark]   │
+                                        │  THEME                             │
+                                        │  [ Light ] [ Sepia ] [ Dark ]      │
                                         └────────────────────────────────────┘
 ```
 
@@ -759,7 +739,7 @@ Left cluster:                           Right cluster:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [≡ TOC] [⬜ Theme] [⬚ Annot]    {Book Title}    [AA] [🔍] [🌐●] [🔖]  │
+│ ● ● ●  [≡] [🔖] [🗒]         {Book Title}         [Aa] [🌐●] [BI] [↓]        │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
 │         Lorem ipsum dolor sit amet,        Sed ut perspiciatis unde omnis       │
@@ -785,7 +765,7 @@ Left cluster:                           Right cluster:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [≡ TOC] [⬜ Theme] [⬚ Annot]    {Book Title}    [AA] [🔍] [🌐●] [🔖]  │
+│ ● ● ●  [≡] [🔖] [🗒]         {Book Title}         [Aa] [🌐●] [BI] [↓]        │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │  🌐 Translating · Chapter 3 of 18          [BUTTON: Pause]  [BUTTON: Cancel]   │
 ├─────────────────────────────────────────────────────────────────────────────────┤

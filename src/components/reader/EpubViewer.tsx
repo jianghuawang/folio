@@ -6,12 +6,14 @@ import {
   DEFAULT_READING_SETTINGS,
   getReaderErrorMessage,
   type EpubBridge,
+  type ReaderHighlightActivationPayload,
   type ReaderLocationState,
+  type ReaderNoteActivationPayload,
   type ReaderSelectionPayload,
   type ReaderTocItem,
 } from "@/lib/epub-bridge";
 import { saveReadingPosition } from "@/lib/tauri-commands";
-import type { Highlight } from "@/types/annotation";
+import type { Highlight, Note } from "@/types/annotation";
 import type { Book } from "@/types/book";
 import type { ReadingSettings } from "@/types/settings";
 import type { Translation } from "@/types/translation";
@@ -20,8 +22,11 @@ interface EpubViewerProps {
   bilingualMode: boolean;
   book: Book;
   highlights: Highlight[];
+  notes: Note[];
   onBridgeReady: (bridge: EpubBridge, tocItems: ReaderTocItem[]) => void;
+  onHighlightActivate: (payload: ReaderHighlightActivationPayload) => void;
   onLocationChange: (location: ReaderLocationState) => void;
+  onNoteActivate: (payload: ReaderNoteActivationPayload) => void;
   onPositionRestoreError: () => void;
   onSelectionChange: (selection: ReaderSelectionPayload | null) => void;
   readingSettings: ReadingSettings;
@@ -38,8 +43,11 @@ export function EpubViewer({
   bilingualMode,
   book,
   highlights,
+  notes,
   onBridgeReady,
+  onHighlightActivate,
   onLocationChange,
+  onNoteActivate,
   onPositionRestoreError,
   onSelectionChange,
   readingSettings = DEFAULT_READING_SETTINGS,
@@ -47,9 +55,39 @@ export function EpubViewer({
 }: EpubViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<EpubBridge | null>(null);
+  const onBridgeReadyRef = useRef(onBridgeReady);
+  const onHighlightActivateRef = useRef(onHighlightActivate);
+  const onLocationChangeRef = useRef(onLocationChange);
+  const onNoteActivateRef = useRef(onNoteActivate);
+  const onPositionRestoreErrorRef = useRef(onPositionRestoreError);
+  const onSelectionChangeRef = useRef(onSelectionChange);
   const saveTimeoutRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onBridgeReadyRef.current = onBridgeReady;
+  }, [onBridgeReady]);
+
+  useEffect(() => {
+    onHighlightActivateRef.current = onHighlightActivate;
+  }, [onHighlightActivate]);
+
+  useEffect(() => {
+    onLocationChangeRef.current = onLocationChange;
+  }, [onLocationChange]);
+
+  useEffect(() => {
+    onNoteActivateRef.current = onNoteActivate;
+  }, [onNoteActivate]);
+
+  useEffect(() => {
+    onPositionRestoreErrorRef.current = onPositionRestoreError;
+  }, [onPositionRestoreError]);
+
+  useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onSelectionChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,8 +109,11 @@ export function EpubViewer({
           setIsLoading(false);
         }
       },
+      onHighlightActivate: (payload) => {
+        onHighlightActivateRef.current(payload);
+      },
       onLocationChange: (location) => {
-        onLocationChange(location);
+        onLocationChangeRef.current(location);
 
         if (saveTimeoutRef.current) {
           window.clearTimeout(saveTimeoutRef.current);
@@ -82,7 +123,12 @@ export function EpubViewer({
           void saveReadingPosition(book.id, location.cfi, location.progress).catch(() => undefined);
         }, 2000);
       },
-      onPositionRestoreError,
+      onNoteActivate: (note) => {
+        onNoteActivateRef.current(note);
+      },
+      onPositionRestoreError: () => {
+        onPositionRestoreErrorRef.current();
+      },
       onReady: ({ bridge, toc }) => {
         if (cancelled) {
           bridge.destroy();
@@ -90,12 +136,23 @@ export function EpubViewer({
         }
 
         bridgeRef.current = bridge;
-        onBridgeReady(bridge, toc);
+        onBridgeReadyRef.current(bridge, toc);
         setIsLoading(false);
       },
-      onSelectionChange,
+      onSelectionChange: (selection) => {
+        onSelectionChangeRef.current(selection);
+      },
       readingSettings,
-    }).catch(() => undefined);
+    }).catch((bridgeError: unknown) => {
+      if (!cancelled) {
+        setError(
+          getReaderErrorMessage(
+            bridgeError instanceof Error ? bridgeError : new Error(String(bridgeError)),
+          ),
+        );
+        setIsLoading(false);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -105,13 +162,7 @@ export function EpubViewer({
       bridgeRef.current?.destroy();
       bridgeRef.current = null;
     };
-  }, [
-    book,
-    onBridgeReady,
-    onLocationChange,
-    onPositionRestoreError,
-    onSelectionChange,
-  ]);
+  }, [book]);
 
   useEffect(() => {
     bridgeRef.current?.applyReadingSettings(readingSettings);
@@ -120,6 +171,10 @@ export function EpubViewer({
   useEffect(() => {
     bridgeRef.current?.setHighlights(highlights);
   }, [highlights]);
+
+  useEffect(() => {
+    bridgeRef.current?.setNotes(notes);
+  }, [notes]);
 
   useEffect(() => {
     bridgeRef.current?.setTranslations({

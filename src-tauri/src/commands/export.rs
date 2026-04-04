@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, State};
@@ -74,6 +74,68 @@ pub fn export_bilingual_epub(
     exporter::export_bilingual_epub(&app, &managed_file_path, &translations, &save_path)
 }
 
+#[tauri::command]
+pub fn export_highlights(
+    state: State<'_, AppState>,
+    book_id: String,
+    save_path: String,
+) -> Result<(), String> {
+    let save_path = save_path.trim().to_string();
+    let (book_title, managed_file_path, highlights) = {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
+
+        let (book_title, managed_file_path) = connection
+            .query_row(
+                "SELECT title, file_path FROM books WHERE id = ?1",
+                params![&book_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "BOOK_NOT_FOUND".to_string())?;
+
+        let mut statement = connection
+            .prepare(
+                "SELECT color, text_excerpt, cfi_range, created_at
+                 FROM highlights
+                 WHERE book_id = ?1
+                 ORDER BY created_at ASC",
+            )
+            .map_err(|error| error.to_string())?;
+
+        let highlights = statement
+            .query_map(params![&book_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+
+        (book_title, managed_file_path, highlights)
+    };
+
+    if highlights.is_empty() {
+        return Err("NO_HIGHLIGHTS".to_string());
+    }
+
+    let export_format = validate_highlight_export_path(&save_path, &managed_file_path)?;
+    let output = match export_format.as_str() {
+        "csv" => build_highlights_csv(&highlights),
+        "md" => build_highlights_markdown(&book_title, &highlights),
+        _ => return Err("UNSUPPORTED_EXPORT_FORMAT".to_string()),
+    };
+
+    fs::write(&save_path, output).map_err(|_| "WRITE_ERROR".to_string())
+}
+
 fn validate_save_path(save_path: &str, managed_file_path: &str) -> Result<(), String> {
     if save_path.is_empty() {
         return Err("WRITE_ERROR".to_string());
@@ -107,4 +169,85 @@ fn validate_save_path(save_path: &str, managed_file_path: &str) -> Result<(), St
     }
 
     Ok(())
+}
+
+fn validate_highlight_export_path(
+    save_path: &str,
+    managed_file_path: &str,
+) -> Result<String, String> {
+    if save_path.is_empty() {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    let export_path = Path::new(save_path);
+    let parent_directory = export_path
+        .parent()
+        .ok_or_else(|| "WRITE_ERROR".to_string())?;
+
+    export_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "WRITE_ERROR".to_string())?;
+
+    if !parent_directory.exists() || !parent_directory.is_dir() {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    if export_path == Path::new(managed_file_path) {
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    let extension = export_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .ok_or_else(|| "UNSUPPORTED_EXPORT_FORMAT".to_string())?;
+
+    if extension != "md" && extension != "csv" {
+        return Err("UNSUPPORTED_EXPORT_FORMAT".to_string());
+    }
+
+    Ok(extension)
+}
+
+fn build_highlights_markdown(
+    book_title: &str,
+    highlights: &[(String, String, String, i64)],
+) -> String {
+    let mut lines = vec![format!("# {} Highlights", book_title.trim()), String::new()];
+
+    for (index, (color, excerpt, cfi_range, created_at)) in highlights.iter().enumerate() {
+        lines.push(format!("## Highlight {}", index + 1));
+        lines.push(String::new());
+        lines.push(format!("> {}", excerpt.trim()));
+        lines.push(String::new());
+        lines.push(format!("- Color: {}", color));
+        lines.push(format!("- Created At (Unix): {}", created_at));
+        lines.push(format!("- CFI: {}", cfi_range));
+        lines.push(String::new());
+    }
+
+    lines.join("\n")
+}
+
+fn build_highlights_csv(highlights: &[(String, String, String, i64)]) -> String {
+    let mut rows = vec!["color,text_excerpt,cfi_range,created_at_unix".to_string()];
+
+    for (color, excerpt, cfi_range, created_at) in highlights {
+        rows.push(format!(
+            "{},{},{},{}",
+            escape_csv(color),
+            escape_csv(excerpt),
+            escape_csv(cfi_range),
+            created_at
+        ));
+    }
+
+    rows.join("\n")
+}
+
+fn escape_csv(value: &str) -> String {
+    let escaped = value.replace('"', "\"\"");
+    format!("\"{}\"", escaped)
 }

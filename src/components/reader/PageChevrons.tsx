@@ -6,14 +6,12 @@ interface PageChevronsProps {
   disabled?: boolean;
   onNext: () => void;
   onPrev: () => void;
-  visible?: boolean;
 }
 
 export function PageChevrons({
   disabled = false,
   onNext,
   onPrev,
-  visible = false,
 }: PageChevronsProps) {
   return (
     <>
@@ -24,10 +22,7 @@ export function PageChevrons({
           size="sm"
           disabled={disabled}
           onClick={onPrev}
-          className={[
-            "pointer-events-auto h-16 w-8 rounded-full bg-transparent px-0 text-black/40 transition-all duration-200 hover:bg-black/[0.03] hover:text-black/70",
-            visible ? "opacity-100" : "opacity-0",
-          ].join(" ")}
+          className="pointer-events-auto h-16 w-8 rounded-full bg-transparent px-0 text-black/40 transition-all duration-200 hover:bg-black/[0.03] hover:text-black/70"
           aria-label="Previous page"
         >
           <ChevronLeft className="h-8 w-8 stroke-[1.5]" />
@@ -41,10 +36,7 @@ export function PageChevrons({
           size="sm"
           disabled={disabled}
           onClick={onNext}
-          className={[
-            "pointer-events-auto h-16 w-8 rounded-full bg-transparent px-0 text-black/40 transition-all duration-200 hover:bg-black/[0.03] hover:text-black/70",
-            visible ? "opacity-100" : "opacity-0",
-          ].join(" ")}
+          className="pointer-events-auto h-16 w-8 rounded-full bg-transparent px-0 text-black/40 transition-all duration-200 hover:bg-black/[0.03] hover:text-black/70"
           aria-label="Next page"
         >
           <ChevronRight className="h-8 w-8 stroke-[1.5]" />

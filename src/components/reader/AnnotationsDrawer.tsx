@@ -1,12 +1,7 @@
-import { Trash2 } from "lucide-react";
+import { Download, Loader2, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import type { ReaderAnnotationsTab } from "@/store/readerStore";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPercent } from "@/lib/utils";
 import type { Highlight, Note } from "@/types/annotation";
@@ -25,6 +20,10 @@ const HIGHLIGHT_DOT_CLASS_NAMES: Record<Highlight["color"], string> = {
 };
 
 interface AnnotationsDrawerProps {
+  activeTab: ReaderAnnotationsTab;
+  exportDisabled: boolean;
+  exportErrorMessage: string | null;
+  exportPending: boolean;
   highlightError: boolean;
   highlightItems: Array<{ highlight: Highlight; meta?: AnnotationMeta | null }>;
   highlightsLoading: boolean;
@@ -33,16 +32,18 @@ interface AnnotationsDrawerProps {
   notesLoading: boolean;
   onDeleteHighlight: (id: string) => void;
   onDeleteNote: (id: string) => void;
+  onExportHighlights: () => void;
   onJumpToHighlight: (highlight: Highlight) => void;
   onJumpToNote: (note: Note) => void;
   onOpenChange: (open: boolean) => void;
   onRetryHighlights: () => void;
   onRetryNotes: () => void;
+  onTabChange: (tab: ReaderAnnotationsTab) => void;
   open: boolean;
 }
 
 function EmptyState({ message }: { message: string }) {
-  return <p className="px-6 py-6 text-sm text-[--color-text-muted]">{message}</p>;
+  return <p className="px-6 py-6 text-sm text-black/45">{message}</p>;
 }
 
 function InlineError({ onRetry }: { onRetry: () => void }) {
@@ -61,6 +62,10 @@ function InlineError({ onRetry }: { onRetry: () => void }) {
 }
 
 export function AnnotationsDrawer({
+  activeTab,
+  exportDisabled,
+  exportErrorMessage,
+  exportPending,
   highlightError,
   highlightItems,
   highlightsLoading,
@@ -69,134 +74,171 @@ export function AnnotationsDrawer({
   notesLoading,
   onDeleteHighlight,
   onDeleteNote,
+  onExportHighlights,
   onJumpToHighlight,
   onJumpToNote,
   onOpenChange,
   onRetryHighlights,
   onRetryNotes,
+  onTabChange,
   open,
 }: AnnotationsDrawerProps) {
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full border-l border-[--color-border] bg-[--color-bg-surface] p-0 text-[--color-text-primary] sm:max-w-[280px]"
-      >
-        <div className="flex h-full flex-col">
-          <SheetHeader className="border-b border-[--color-border] px-6 py-5 text-left">
-            <SheetTitle className="text-[22px] font-semibold text-[--color-text-primary]">
-              Annotations
-            </SheetTitle>
-            <SheetDescription className="text-sm text-[--color-text-muted]">
-              Browse highlights and notes for this book.
-            </SheetDescription>
-          </SheetHeader>
+  if (!open) {
+    return null;
+  }
 
-          <Tabs defaultValue="highlights" className="flex min-h-0 flex-1 flex-col">
-            <div className="border-b border-[--color-border] px-4 py-3">
-              <TabsList className="grid w-full grid-cols-2 rounded-full bg-[--color-bg-elevated]">
-                <TabsTrigger value="highlights" className="rounded-full">
-                  Highlights
-                </TabsTrigger>
-                <TabsTrigger value="notes" className="rounded-full">
-                  Notes
-                </TabsTrigger>
-              </TabsList>
+  return createPortal(
+    <div className="fixed inset-0 z-40" onMouseDown={() => onOpenChange(false)}>
+      <div className="absolute left-5 right-4 top-20 flex justify-start">
+        <div
+          className="pointer-events-auto relative w-full max-w-[604px]"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="absolute left-[68px] top-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/88" />
+
+          <div className="overflow-hidden rounded-[34px] border border-black/10 bg-white/84 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px]">
+            <div className="border-b border-black/10 px-6 py-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-black/70">
+                    Annotations
+                  </h2>
+                  <p className="mt-1 text-sm text-black/45">
+                    Browse highlights and notes for this book.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onExportHighlights}
+                  disabled={exportDisabled || exportPending}
+                  className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/70 px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {exportPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  <span>Export Highlights</span>
+                </button>
+              </div>
+
+              {exportErrorMessage ? (
+                <p className="mt-3 text-sm text-[--color-destructive]">{exportErrorMessage}</p>
+              ) : null}
             </div>
 
-            <TabsContent value="highlights" className="mt-0 min-h-0 flex-1 overflow-y-auto">
-              {highlightsLoading ? (
-                <EmptyState message="Loading highlights…" />
-              ) : highlightError ? (
-                <InlineError onRetry={onRetryHighlights} />
-              ) : highlightItems.length === 0 ? (
-                <EmptyState message="No highlights yet. Select text to start highlighting." />
-              ) : (
-                <div className="divide-y divide-[--color-border]">
-                  {highlightItems.map(({ highlight, meta }) => (
-                    <div
-                      key={highlight.id}
-                      className="group flex items-start gap-3 px-4 py-4 transition hover:bg-white/[0.03]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onJumpToHighlight(highlight)}
-                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
-                      >
-                        <span
-                          className={[
-                            "mt-1 h-3 w-3 shrink-0 rounded-full",
-                            HIGHLIGHT_DOT_CLASS_NAMES[highlight.color],
-                          ].join(" ")}
-                        />
-                        <span className="min-w-0">
-                          <span className="line-clamp-2 block text-sm text-[--color-text-primary]">
-                            {highlight.text_excerpt}
-                          </span>
-                          <span className="mt-1 block text-xs text-[--color-text-muted]">
-                            {meta ? `${meta.chapterTitle} · ${formatPercent(meta.progress)}` : "Location unavailable"}
-                          </span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteHighlight(highlight.id)}
-                        className="rounded-full p-2 text-[--color-text-muted] opacity-0 transition hover:bg-white/5 hover:text-[--color-destructive] group-hover:opacity-100"
-                        aria-label="Delete highlight"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => onTabChange(value as ReaderAnnotationsTab)}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="border-b border-black/10 px-4 py-3">
+                <TabsList className="grid w-full max-w-[280px] grid-cols-2 rounded-full bg-black/[0.06]">
+                  <TabsTrigger value="highlights" className="rounded-full">
+                    Highlights
+                  </TabsTrigger>
+                  <TabsTrigger value="notes" className="rounded-full">
+                    Notes
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
-            <TabsContent value="notes" className="mt-0 min-h-0 flex-1 overflow-y-auto">
-              {notesLoading ? (
-                <EmptyState message="Loading notes…" />
-              ) : noteError ? (
-                <InlineError onRetry={onRetryNotes} />
-              ) : noteItems.length === 0 ? (
-                <EmptyState message="No notes yet. Select text and tap ✏ to add a note." />
-              ) : (
-                <div className="divide-y divide-[--color-border]">
-                  {noteItems.map(({ note, meta }) => (
-                    <div
-                      key={note.id}
-                      className="group flex items-start gap-3 px-4 py-4 transition hover:bg-white/[0.03]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onJumpToNote(note)}
-                        className="min-w-0 flex-1 text-left"
+              <TabsContent value="highlights" className="mt-0 min-h-0 max-h-[62vh] overflow-y-auto">
+                {highlightsLoading ? (
+                  <EmptyState message="Loading highlights…" />
+                ) : highlightError ? (
+                  <InlineError onRetry={onRetryHighlights} />
+                ) : highlightItems.length === 0 ? (
+                  <EmptyState message="No highlights yet. Select text to start highlighting." />
+                ) : (
+                  <div className="divide-y divide-black/10">
+                    {highlightItems.map(({ highlight, meta }) => (
+                      <div
+                        key={highlight.id}
+                        className="group flex items-start gap-3 px-4 py-4 transition hover:bg-black/[0.03]"
                       >
-                        <span className="line-clamp-2 block text-sm text-[--color-text-primary]">
-                          {note.text_excerpt}
-                        </span>
-                        <span className="mt-1 line-clamp-2 block text-xs text-[--color-text-secondary]">
-                          {note.body}
-                        </span>
-                        <span className="mt-2 block text-xs text-[--color-text-muted]">
-                          {meta ? `${meta.chapterTitle} · ${formatPercent(meta.progress)}` : "Location unavailable"}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteNote(note.id)}
-                        className="rounded-full p-2 text-[--color-text-muted] opacity-0 transition hover:bg-white/5 hover:text-[--color-destructive] group-hover:opacity-100"
-                        aria-label="Delete note"
+                        <button
+                          type="button"
+                          onClick={() => onJumpToHighlight(highlight)}
+                          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                        >
+                          <span
+                            className={[
+                              "mt-1 h-3 w-3 shrink-0 rounded-full",
+                              HIGHLIGHT_DOT_CLASS_NAMES[highlight.color],
+                            ].join(" ")}
+                          />
+                          <span className="min-w-0">
+                            <span className="line-clamp-2 block text-sm text-black/80">
+                              {highlight.text_excerpt}
+                            </span>
+                            <span className="mt-1 block text-xs text-black/45">
+                              {meta
+                                ? `${meta.chapterTitle} · ${formatPercent(meta.progress)}`
+                                : "Location unavailable"}
+                            </span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteHighlight(highlight.id)}
+                          className="rounded-full p-2 text-[--color-text-muted] opacity-0 transition hover:bg-black/[0.05] hover:text-[--color-destructive] group-hover:opacity-100"
+                          aria-label="Delete highlight"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="notes" className="mt-0 min-h-0 max-h-[62vh] overflow-y-auto">
+                {notesLoading ? (
+                  <EmptyState message="Loading notes…" />
+                ) : noteError ? (
+                  <InlineError onRetry={onRetryNotes} />
+                ) : noteItems.length === 0 ? (
+                  <EmptyState message="No notes yet. Select text and tap ✏ to add a note." />
+                ) : (
+                  <div className="divide-y divide-black/10">
+                    {noteItems.map(({ note, meta }) => (
+                      <div
+                        key={note.id}
+                        className="group flex items-start gap-3 px-4 py-4 transition hover:bg-black/[0.03]"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+                        <button
+                          type="button"
+                          onClick={() => onJumpToNote(note)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <span className="line-clamp-2 block text-sm text-black/80">
+                            {note.text_excerpt}
+                          </span>
+                          <span className="mt-1 line-clamp-2 block text-xs text-black/55">
+                            {note.body}
+                          </span>
+                          <span className="mt-2 block text-xs text-black/45">
+                            {meta
+                              ? `${meta.chapterTitle} · ${formatPercent(meta.progress)}`
+                              : "Location unavailable"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteNote(note.id)}
+                          className="rounded-full p-2 text-[--color-text-muted] opacity-0 transition hover:bg-black/[0.05] hover:text-[--color-destructive] group-hover:opacity-100"
+                          aria-label="Delete note"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,38 +1,43 @@
 import {
+  Bookmark,
   Download,
   Languages,
   Menu,
   NotebookTabs,
-  Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { DisplaySettingsPopover } from "@/components/reader/DisplaySettingsPopover";
 import { Button } from "@/components/ui/button";
-import type { ReadingSettings, ReadingTheme } from "@/types/settings";
+import type { ReaderAnnotationsTab } from "@/store/readerStore";
+import type { ReadingSettings } from "@/types/settings";
 
 interface ReaderToolbarProps {
+  annotationsOpen: boolean;
+  annotationsTab: ReaderAnnotationsTab;
   canExport: boolean;
   canTranslate: boolean;
-  onCycleTheme: () => void;
   onExport: () => void;
+  onOpenHighlights: () => void;
+  onOpenNotes: () => void;
   onOpenTranslationSheet: () => void;
-  onToggleAnnotations: () => void;
   onToggleBilingualMode: () => void;
   onToggleToc: () => void;
   onUpdateReadingSettings: (payload: Partial<ReadingSettings>) => void;
   readingSettings: ReadingSettings;
   showBilingualToggle: boolean;
+  tocOpen: boolean;
   title: string;
-  visible: boolean;
 }
 
 function ToolbarIconButton({
+  active = false,
   disabled = false,
   icon,
   label,
   onClick,
 }: {
+  active?: boolean;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
@@ -45,7 +50,12 @@ function ToolbarIconButton({
       size="icon"
       disabled={disabled}
       onClick={onClick}
-      className="h-10 w-10 rounded-full text-black/70 disabled:opacity-100 hover:bg-black/[0.05] hover:text-black/85"
+      className={[
+        "h-10 w-10 rounded-full disabled:opacity-100",
+        active
+          ? "bg-black/10 text-black"
+          : "text-black/70 hover:bg-black/[0.05] hover:text-black/85",
+      ].join(" ")}
       aria-label={label}
       title={label}
     >
@@ -54,71 +64,54 @@ function ToolbarIconButton({
   );
 }
 
-function nextThemeLabel(theme: ReadingTheme) {
-  if (theme === "light") {
-    return "Switch to Sepia theme";
-  }
-
-  if (theme === "sepia") {
-    return "Switch to Dark theme";
-  }
-
-  return "Switch to Light theme";
-}
-
 export function ReaderToolbar({
+  annotationsOpen,
+  annotationsTab,
   canExport,
   canTranslate,
-  onCycleTheme,
   onExport,
+  onOpenHighlights,
+  onOpenNotes,
   onOpenTranslationSheet,
-  onToggleAnnotations,
   onToggleBilingualMode,
   onToggleToc,
   onUpdateReadingSettings,
   readingSettings,
   showBilingualToggle,
+  tocOpen,
   title,
-  visible,
 }: ReaderToolbarProps) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-5 pt-3">
-      <div
-        className={[
-          "absolute left-5 top-3 flex items-center transition-opacity duration-200 ease-out",
-          visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-        ].join(" ")}
-      >
-        <div className="flex items-center rounded-full border border-black/5 bg-white/92 p-1 shadow-[0_12px_30px_rgba(0,0,0,0.10)] backdrop-blur-xl">
+      <div className="pointer-events-auto absolute left-5 top-5 flex items-center">
+        <div className="flex items-center gap-1 rounded-full border border-black/5 bg-white/88 p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.16)] backdrop-blur-[24px]">
           <ToolbarIconButton
             icon={<Menu className="h-5 w-5 stroke-[1.75]" />}
-            label="Table of contents"
+            active={tocOpen}
+            label="Contents"
             onClick={onToggleToc}
           />
           <ToolbarIconButton
-            icon={<Palette className="h-5 w-5 stroke-[1.75]" />}
-            label={nextThemeLabel(readingSettings.theme)}
-            onClick={onCycleTheme}
+            icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />}
+            active={annotationsOpen && annotationsTab === "highlights"}
+            label="Highlights"
+            onClick={onOpenHighlights}
           />
           <ToolbarIconButton
             icon={<NotebookTabs className="h-5 w-5 stroke-[1.75]" />}
-            label="Annotations"
-            onClick={onToggleAnnotations}
+            active={annotationsOpen && annotationsTab === "notes"}
+            label="Notes"
+            onClick={onOpenNotes}
           />
         </div>
       </div>
 
-      <div className="pointer-events-none absolute left-1/2 top-6 -translate-x-1/2 px-4 text-center text-[13px] font-semibold tracking-[0.01em] text-black/80">
+      <div className="absolute left-1/2 top-7 max-w-[45vw] -translate-x-1/2 truncate px-4 text-center text-[15px] font-semibold tracking-[-0.02em] text-black/75">
         {title}
       </div>
 
-      <div
-        className={[
-          "absolute right-5 top-3 flex items-center transition-opacity duration-200 ease-out",
-          visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-        ].join(" ")}
-      >
-        <div className="flex items-center rounded-full border border-black/5 bg-white/92 p-1 shadow-[0_12px_30px_rgba(0,0,0,0.10)] backdrop-blur-xl">
+      <div className="pointer-events-auto absolute right-5 top-5 flex items-center">
+        <div className="flex items-center gap-1 rounded-full border border-[#ece7df] bg-white/92 p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.14)] backdrop-blur-[20px]">
           <DisplaySettingsPopover
             disabled={false}
             onUpdate={onUpdateReadingSettings}

@@ -765,12 +765,12 @@ Do NOT touch:
 
 ### Scope
 
-Build the core Reader window with epub.js mounting, page navigation, progress UI, toolbar shell, and TOC drawer behavior.
+Build the core Reader window with epub.js mounting, page navigation, progress UI, toolbar shell, and TOC floating-dropdown behavior.
 
 ### PRD References
 
 - [Section name]: PRD.md Section 3 — Feature 3 "Open Book in New Window", Feature 4 "Reading — Core Renderer", and Feature 15 "Table of Contents Navigation"
-- [Wireframe]: PRD.md Section 5b — "Reader Window — Clean (no toolbar, macOS Books style)", "Reader Window — Toolbar Visible (on hover/click)", and "Reader Window — TOC Drawer (slides in from left)"
+- [Wireframe]: PRD.md Section 5b — "Reader Window — Clean (no toolbar, macOS Books style)", "Reader Window — Toolbar Visible (on hover/click)", and "Reader Window — Contents Dropdown Menu"
 - [States]: PRD.md Section 7 — opening-book loading spinner, DRM error, and "This book has no table of contents."
 
 ### TECH_DESIGN References
@@ -788,7 +788,7 @@ Create:
 
 - `src/components/reader/ReaderToolbar.tsx` — toolbar shell and button layout
 - `src/components/reader/EpubViewer.tsx` — reader content mount and first-page render boundary
-- `src/components/reader/TocDrawer.tsx` — table-of-contents drawer shell and list rendering
+- `src/components/reader/TocDrawer.tsx` — table-of-contents floating dropdown shell and list rendering
 - `src/components/reader/PageChevrons.tsx` — hover-reveal page navigation controls
 - `src/components/reader/ProgressBar.tsx` — chapter/progress footer bar
 - `src/lib/epub-bridge.ts` — single-reader epub.js initialization and helper surface
@@ -947,12 +947,12 @@ Do NOT touch:
 
 ### Scope
 
-Implement note editing plus the annotations drawer for browsing, jumping to, and deleting notes/highlights.
+Implement note editing plus the annotations floating dropdown for browsing, jumping to, deleting, and exporting highlights.
 
 ### PRD References
 
 - [Section name]: PRD.md Section 3 — Feature 8 "Notes" and Feature 9 "Annotations Panel"
-- [Wireframe]: PRD.md Section 5b — "Reader Window — Note Editor Panel", "Reader Window — Note Editor, Validation Error", and "Reader Window — Annotations Drawer (slides in from right)"
+- [Wireframe]: PRD.md Section 5b — "Reader Window — Note Editor Panel", "Reader Window — Note Editor, Validation Error", and "Reader Window — Annotations Dropdown Menu"
 - [States]: PRD.md Section 7 — empty highlights/notes tabs and note validation error behavior
 
 ### TECH_DESIGN References
@@ -969,15 +969,15 @@ Implement note editing plus the annotations drawer for browsing, jumping to, and
 Create:
 
 - `src/components/reader/NoteEditor.tsx` — floating note editor panel with create/edit/delete paths
-- `src/components/reader/AnnotationsDrawer.tsx` — highlights/notes drawer with tabbed lists
+- `src/components/reader/AnnotationsDrawer.tsx` — highlights/notes floating dropdown with tabbed lists and export action
 - `src/hooks/useNotes.ts` — notes query/mutation hook
 
 Modify:
 
 - `src/components/reader/SelectionPopup.tsx` — launch note creation/editing from the popup
 - `src/components/reader/EpubViewer.tsx` — anchor note indicators and navigation hooks
-- `src/windows/ReaderWindow.tsx` — compose the note editor and annotations drawer
-- `src/store/readerStore.ts` — track note-editor and drawer state
+- `src/windows/ReaderWindow.tsx` — compose the note editor and annotations dropdown
+- `src/store/readerStore.ts` — track note-editor and dropdown state
 
 Do NOT touch:
 
@@ -985,7 +985,8 @@ Do NOT touch:
 
 ### Acceptance Criteria
 
-- The note editor and annotations drawer match the PRD.md Section 5b wireframes and empty/error states
+- The note editor and annotations dropdown match the PRD.md Section 5b wireframes and empty/error states
+- Highlight export is available from the annotations dropdown using the documented export command contract
 - Form handling uses React Hook Form + Zod per TECH_DESIGN.md Sections 1, 6, and 7
 - Annotation-list navigation, delete confirmation, and invalidation flows use the documented hooks and commands
 - Note deletion-on-whitespace behavior is respected without inventing new note states
@@ -1533,28 +1534,28 @@ Do NOT touch:
 
 ### Scope
 
-Add annotation export only after a V2 spec defines formats, UI affordances, and export command contracts.
+Legacy note: this task was superseded once PRD.md and TECH_DESIGN.md promoted highlight export into the current reader scope.
 
 ### PRD References
 
-- [Section name]: PRD.md Section 4 — V2-Feature 5 "Export Annotations"
-- [Wireframe]: PRD.md Section 5b — no annotation-export wireframe is provided
-- [States]: PRD.md Section 7 — no V2-specific annotation-export states are defined
+- [Section name]: PRD.md Section 3 — Feature 16 "Export Highlights"
+- [Wireframe]: PRD.md Section 5b — "Reader Window — Annotations Dropdown Menu"
+- [States]: PRD.md Section 7 — export write failure is handled inline in the annotations dropdown
 
 ### TECH_DESIGN References
 
 - [Stack]: TECH_DESIGN.md Section 1 — reuse the locked MVP stack only
 - [Structure]: TECH_DESIGN.md Section 2 — would likely impact reader components, hooks, and backend export commands
-- [Schema]: TECH_DESIGN.md Section 3 — existing highlights/notes tables exist, but no export job or file-format contract exists
-- [API]: TECH_DESIGN.md Section 5 — no annotation-export command exists
-- [Frontend]: TECH_DESIGN.md Section 4c — no annotation-export component mapping exists
+- [Schema]: TECH_DESIGN.md Section 3 — existing `highlights` table is the export source
+- [API]: TECH_DESIGN.md Section 5 — `export_highlights`
+- [Frontend]: TECH_DESIGN.md Section 4c — annotations dropdown includes the export action
 - [Pattern]: TECH_DESIGN.md Section 6 — existing wrapper and export-boundary rules still apply once specified
 
 ### Files
 
 Create:
 
-- none — blocked until PRD and TECH_DESIGN are extended for annotation export
+- none — scope now lives in the main reader/annotations implementation path
 
 Modify:
 

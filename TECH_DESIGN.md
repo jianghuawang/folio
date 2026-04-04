@@ -90,7 +90,7 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │       │   ├── notes.rs          ← save_note, update_note, delete_note, get_notes
 │       │   ├── reader.rs         ← save_reading_position, get_reading_settings, update_reading_settings, open_reader_window
 │       │   ├── translations.rs   ← start_translation, pause_translation, resume_translation, cancel_translation, get_translations, retry_failed_paragraphs
-│       │   ├── export.rs         ← export_bilingual_epub
+│       │   ├── export.rs         ← export_bilingual_epub + export_highlights
 │       │   └── settings.rs       ← get_app_settings, save_app_settings, save_api_key, has_api_key, clear_api_key, test_openrouter_connection
 │       ├── epub/
 │       │   ├── mod.rs            ← Public API for epub module
@@ -123,17 +123,17 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │   │   │   ├── DuplicateBanner.tsx ← Auto-dismissing top banner
 │   │   │   └── DropZone.tsx      ← Drag-and-drop overlay; listens for dragover/drop on window
 │   │   ├── reader/               ← Components used only in ReaderWindow
-│   │   │   ├── ReaderToolbar.tsx ← TOC / Annotations / Aa / Theme / Translate / Bilingual buttons
+│   │   │   ├── ReaderToolbar.tsx ← Left-aligned menu cluster + centered title + top-right utility cluster
 │   │   │   ├── EpubViewer.tsx    ← Mounts epub.js Rendition into a div; owns the Book instance
 │   │   │   ├── SelectionPopup.tsx ← Floating 320×44px bar above selection; color swatches + action buttons
 │   │   │   ├── NoteEditor.tsx    ← Floating panel for create/edit/delete notes
-│   │   │   ├── TocDrawer.tsx     ← Left drawer (280px) with chapter list
-│   │   │   ├── AnnotationsDrawer.tsx ← Right drawer (280px); Highlights / Notes tabs
-│   │   │   ├── DisplaySettingsPopover.tsx ← Aa popover: font size, family, line height, theme
+│   │   │   ├── TocDrawer.tsx     ← Floating contents dropdown panel with top notch and chapter list
+│   │   │   ├── AnnotationsDrawer.tsx ← Floating annotations dropdown panel with tabs + export action
+│   │   │   ├── DisplaySettingsPopover.tsx ← Aa popover: fully opaque font size / family / line height / theme card
 │   │   │   ├── TranslationBanner.tsx ← Fixed top banner during translation; Pause / Cancel
 │   │   │   ├── TranslationSheet.tsx ← Modal: language dropdown + Start Translation
 │   │   │   ├── QuoteCoverModal.tsx ← 800×600 modal; canvas preview + controls
-│   │   │   ├── PageChevrons.tsx  ← < > nav buttons, appear on hover
+│   │   │   ├── PageChevrons.tsx  ← < > nav buttons, persist on screen while reading
 │   │   │   └── ProgressBar.tsx   ← Bottom bar: "{Chapter Title} · {X}%"
 │   │   └── settings/             ← Components used only in SettingsWindow
 │   │       ├── GeneralTab.tsx    ← Placeholder only: "No general settings yet."
@@ -436,15 +436,15 @@ src/windows/LibraryWindow.tsx
         └── <DuplicateBanner>   ← top-fixed, auto-dismisses after 4s via setTimeout
 
 src/windows/ReaderWindow.tsx    ← reads ?bookId from URL
-  └── <ReaderToolbar>           ← appears on mousemove, fades after 2s idle
+  └── <ReaderToolbar>           ← persistent top reader chrome; no hover-reveal behavior
         ├── <EpubViewer>        ← div#epub-container; epub.js Book + Rendition mounted here
-        ├── <PageChevrons>      ← < > hover-reveal buttons; 40px hit area
+        ├── <PageChevrons>      ← persistent < > page buttons; 40px hit area
         ├── <ProgressBar>       ← bottom bar: chapter title + percentage
         ├── <SelectionPopup>    ← portal; 320×44px; positioned above selection midpoint
         ├── <NoteEditor>        ← portal; floating panel; conditional on Note action
-        ├── <TocDrawer>         ← shadcn Sheet, side="left", 280px; chapter list
-        ├── <AnnotationsDrawer> ← shadcn Sheet, side="right", 280px; Highlights/Notes tabs
-        ├── <DisplaySettingsPopover> ← shadcn Popover anchored to Aa button
+        ├── <TocDrawer>         ← custom floating dropdown panel, anchored under the left menu cluster
+        ├── <AnnotationsDrawer> ← custom floating dropdown panel, anchored under the left menu cluster
+        ├── <DisplaySettingsPopover> ← custom opaque popover anchored to Aa button
         ├── <TranslationBanner> ← fixed top strip; shown when job status = 'in_progress'|'paused'
         ├── <TranslationSheet>  ← shadcn Dialog; language dropdown + Start Translation
         └── <QuoteCoverModal>   ← shadcn Dialog 800px; left preview / right controls
@@ -492,8 +492,9 @@ Active nav state: Sidebar items compare current `SidebarSection` enum value from
 ### 4f. Animation & Interaction Rules
 
 - **Page transitions:** none — Tauri windows are native; transitions inside the reader are instant page flips
-- **Reader toolbar:** CSS `transition: opacity 200ms ease`; appears on `mousemove`, fades after 2000ms idle
-- **Drawers (TOC / Annotations):** shadcn Sheet default slide animation, 200ms
+- **Reader keyboard navigation:** `ArrowRight` and `ArrowDown` advance one page; `ArrowLeft` and `ArrowUp` go back one page
+- **Reader toolbar:** persistently visible while reading; no hover-reveal or idle-fade behavior
+- **Reader dropdown menus (TOC / Annotations):** custom fade + slight scale animation, 160ms; anchored to the left menu cluster with a visible notch
 - **Loading skeletons:** `animate-pulse` Tailwind class; BookCard skeleton = 160×220 rounded rect + two text bars
 - **Button states:**
   - default: base color
@@ -703,6 +704,14 @@ Args:    { book_id: string, target_language: string, save_path: string }
 Returns: void
 Side effect: Writes .epub file to save_path; emits "export:progress" { percent: number }
 Errors:  throws "TRANSLATION_INCOMPLETE" if job not 100% complete | "WRITE_ERROR"
+```
+
+**`export_highlights`**
+```
+Args:    { book_id: string, save_path: string }
+Returns: void
+Side effect: Writes current-book highlights to save_path; format is inferred from extension (.md or .csv)
+Errors:  throws "NO_HIGHLIGHTS" | "UNSUPPORTED_EXPORT_FORMAT" | "WRITE_ERROR"
 ```
 
 ---

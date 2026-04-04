@@ -19,6 +19,7 @@ export interface ReaderNoteEditorState {
   highlightId: string | null;
   noteId: string | null;
   open: boolean;
+  position: ReaderPopupPosition;
   textExcerpt: string;
 }
 
@@ -32,6 +33,8 @@ export interface ReaderAnnotationMeta {
   progress: number;
 }
 
+export type ReaderAnnotationsTab = "highlights" | "notes";
+
 const DEFAULT_LOCATION: ReaderLocationState = {
   atEnd: false,
   atStart: true,
@@ -44,6 +47,7 @@ const DEFAULT_LOCATION: ReaderLocationState = {
 interface ReaderStore {
   annotationMetaByKey: Record<string, ReaderAnnotationMeta>;
   annotationsOpen: boolean;
+  annotationsTab: ReaderAnnotationsTab;
   bilingualMode: boolean;
   bridge: EpubBridge | null;
   currentLanguage: string | null;
@@ -64,7 +68,7 @@ interface ReaderStore {
   closeQuoteCover: () => void;
   closeToc: () => void;
   closeTranslationSheet: () => void;
-  openAnnotations: () => void;
+  openAnnotations: (tab?: ReaderAnnotationsTab) => void;
   openNoteEditor: (state: Omit<ReaderNoteEditorState, "open">) => void;
   openQuoteCover: (text: string) => void;
   openToc: () => void;
@@ -77,14 +81,16 @@ interface ReaderStore {
   setCurrentLanguage: (language: string | null) => void;
   setInvalidPositionRestore: (value: boolean) => void;
   setLocation: (location: ReaderLocationState) => void;
+  setAnnotationsTab: (tab: ReaderAnnotationsTab) => void;
   setSelection: (selection: ReaderSelectionState | null) => void;
-  toggleAnnotations: () => void;
+  toggleAnnotations: (tab?: ReaderAnnotationsTab) => void;
   toggleToc: () => void;
 }
 
 export const useReaderStore = create<ReaderStore>((set) => ({
   annotationMetaByKey: {},
   annotationsOpen: false,
+  annotationsTab: "highlights",
   bilingualMode: false,
   bridge: null,
   currentLanguage: null,
@@ -105,7 +111,12 @@ export const useReaderStore = create<ReaderStore>((set) => ({
   closeQuoteCover: () => set({ quoteCover: null }),
   closeToc: () => set({ tocOpen: false }),
   closeTranslationSheet: () => set({ translationSheetOpen: false }),
-  openAnnotations: () => set({ annotationsOpen: true }),
+  openAnnotations: (tab = "highlights") =>
+    set({
+      annotationsOpen: true,
+      annotationsTab: tab,
+      tocOpen: false,
+    }),
   openNoteEditor: (state) =>
     set({
       noteEditor: {
@@ -120,13 +131,18 @@ export const useReaderStore = create<ReaderStore>((set) => ({
         text,
       },
     }),
-  openToc: () => set({ tocOpen: true }),
+  openToc: () =>
+    set({
+      annotationsOpen: false,
+      tocOpen: true,
+    }),
   openTranslationSheet: () => set({ translationSheetOpen: true }),
   requestNavigation: (cfi) => set({ pendingNavigationCfi: cfi }),
   resetReaderState: () =>
     set({
       annotationMetaByKey: {},
       annotationsOpen: false,
+      annotationsTab: "highlights",
       bilingualMode: false,
       bridge: null,
       currentLanguage: null,
@@ -151,14 +167,18 @@ export const useReaderStore = create<ReaderStore>((set) => ({
   setCurrentLanguage: (language) => set({ currentLanguage: language }),
   setInvalidPositionRestore: (value) => set({ invalidPositionRestore: value }),
   setLocation: (location) => set({ location }),
+  setAnnotationsTab: (tab) => set({ annotationsTab: tab }),
   setSelection: (selection) => set({ selection }),
-  toggleAnnotations: () =>
+  toggleAnnotations: (tab = "highlights") =>
     set((state) => ({
-      annotationsOpen: !state.annotationsOpen,
+      annotationsOpen:
+        state.annotationsOpen && state.annotationsTab === tab ? !state.annotationsOpen : true,
+      annotationsTab: tab,
+      tocOpen: false,
     })),
   toggleToc: () =>
     set((state) => ({
+      annotationsOpen: false,
       tocOpen: !state.tocOpen,
     })),
 }));
-
