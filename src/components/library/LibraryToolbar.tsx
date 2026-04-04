@@ -1,4 +1,4 @@
-import { Loader2, Search, X } from "lucide-react";
+import { Loader2, PanelLeftOpen, Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 
@@ -9,6 +9,7 @@ interface LibraryToolbarProps {
   onSearchChange: (value: string) => void;
   onClearSearch: () => void;
   onImportClick: () => void;
+  onToggleSidebar?: () => void;
 }
 
 export function LibraryToolbar({
@@ -18,28 +19,40 @@ export function LibraryToolbar({
   onSearchChange,
   onClearSearch,
   onImportClick,
+  onToggleSidebar,
 }: LibraryToolbarProps) {
   return (
     <header className="relative z-20 shrink-0 border-b border-[--color-border] bg-[--color-bg-content] px-6 py-4">
       <div className="flex min-h-10 items-center">
-        <div className="relative w-full max-w-[220px] shrink-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[--color-text-muted]" />
-          <Input
-            value={searchQuery}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search library"
-            className="h-10 rounded-full border-[--color-border-strong] bg-[--color-bg-elevated] pl-9 pr-10 text-sm text-[--color-text-primary] placeholder:text-[--color-text-muted]"
-          />
-          {searchQuery ? (
-            <button
-              type="button"
-              onClick={onClearSearch}
-              className="absolute right-3 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-[--color-text-muted] transition hover:bg-white/10 hover:text-[--color-text-primary]"
-              aria-label="Clear search"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          ) : null}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="hidden h-10 w-10 items-center justify-center rounded-full border border-[--color-border-strong] bg-[--color-bg-elevated] text-[--color-text-secondary] transition hover:text-[--color-text-primary] min-[700px]:inline-flex min-[1000px]:hidden"
+            aria-label="Open library navigation"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </button>
+
+          <div className="relative w-full max-w-[220px] shrink-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[--color-text-muted]" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search library"
+              className="h-10 rounded-full border-[--color-border-strong] bg-[--color-bg-elevated] pl-9 pr-10 text-sm text-[--color-text-primary] placeholder:text-[--color-text-muted]"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={onClearSearch}
+                className="absolute right-3 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-[--color-text-muted] transition hover:bg-white/10 hover:text-[--color-text-primary]"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 

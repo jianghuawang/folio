@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
+  DialogClose,
   DialogHeader,
+  DialogOverlay,
+  DialogPortal,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -158,102 +161,124 @@ export function QuoteCoverModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-folio-quote-cover="true"
-        className="max-w-[880px] rounded-[28px] border border-[--color-border-strong] bg-[--color-bg-surface] p-0 text-[--color-text-primary] shadow-popup"
-      >
-        <DialogHeader className="border-b border-[--color-border] px-6 py-5 text-left">
-          <DialogTitle className="text-[26px] font-semibold text-[--color-text-primary]">
-            Create Quote Cover
-          </DialogTitle>
-        </DialogHeader>
+      <DialogPortal>
+        <DialogOverlay className="bg-white/[0.04] backdrop-blur-[10px]" />
 
-        <div className="grid grid-cols-[400px_minmax(0,1fr)] gap-0">
-          <div className="border-r border-[--color-border] p-6">
-            <div className="overflow-hidden rounded-[24px] bg-black/5">
-              {previewUrl ? (
-                <img
-                  src={previewUrl}
-                  alt="Quote cover preview"
-                  className="h-[400px] w-[400px] object-cover"
-                />
-              ) : (
-                <div className="flex h-[400px] w-[400px] items-center justify-center text-sm text-[--color-text-muted]">
-                  {isRenderingPreview ? <Loader2 className="h-5 w-5 animate-spin" /> : "Preview unavailable"}
+        <DialogPrimitive.Content
+          data-folio-quote-cover="true"
+          className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-48px)] max-w-[880px] translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-[34px] border border-black/10 bg-white/84 p-0 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+        >
+          <DialogHeader className="border-b border-black/10 px-6 py-5 pr-20 text-left">
+            <DialogTitle className="text-[20px] font-semibold tracking-[-0.02em] text-black/70">
+              Create Quote Cover
+            </DialogTitle>
+          </DialogHeader>
+
+          <DialogClose asChild>
+            <button
+              type="button"
+              className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/72 text-black/45 transition hover:bg-white hover:text-black/68 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/10"
+              aria-label="Close quote cover creator"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </DialogClose>
+
+          <div className="grid grid-cols-[400px_minmax(0,1fr)]">
+            <div className="border-r border-black/10 p-6">
+              <div className="rounded-[30px] border border-black/10 bg-white/60 p-5 shadow-[0_20px_52px_rgba(0,0,0,0.08)] backdrop-blur-[18px]">
+                <div className="overflow-hidden rounded-[28px] bg-white/50">
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Quote cover preview"
+                      className="h-[400px] w-[400px] object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-[400px] w-[400px] items-center justify-center text-sm text-black/45">
+                      {isRenderingPreview ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        "Preview unavailable"
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col p-6">
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-[--color-text-secondary]">Theme</p>
-                <div className="flex flex-wrap gap-2">
-                  {QUOTE_COVER_THEMES.map((theme) => {
-                    const isActive = theme.id === themeId;
+            <div className="flex min-h-[520px] flex-col">
+              <div className="border-b border-black/10 px-6 py-5">
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-black/45">Theme</p>
+                  <div className="flex flex-wrap gap-2.5">
+                    {QUOTE_COVER_THEMES.map((theme) => {
+                      const isActive = theme.id === themeId;
 
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        onClick={() => setThemeId(theme.id)}
-                        className={[
-                          "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition",
-                          isActive
-                            ? "border-[--color-primary] bg-[--color-primary]/10 text-[--color-text-primary]"
-                            : "border-[--color-border-strong] bg-[--color-bg-elevated] text-[--color-text-secondary]",
-                        ].join(" ")}
-                      >
-                        <span
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => setThemeId(theme.id)}
                           className={[
-                            "h-3 w-3 rounded-full",
-                            THEME_SWATCH_CLASS_NAMES[theme.id],
+                            "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+                            isActive
+                              ? "border-black/15 bg-white text-black/80 shadow-[0_10px_24px_rgba(0,0,0,0.10)] ring-2 ring-[#0A84FF]"
+                              : "border-black/10 bg-white/68 text-black/60 hover:bg-white/90 hover:text-black/72",
                           ].join(" ")}
-                        />
-                        {theme.label}
-                      </button>
-                    );
-                  })}
+                        >
+                          <span
+                            className={[
+                              "h-3 w-3 rounded-full border border-black/10",
+                              THEME_SWATCH_CLASS_NAMES[theme.id],
+                            ].join(" ")}
+                          />
+                          {theme.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-[--color-text-secondary]">Quote Text</p>
-                <Textarea
-                  value={quoteText}
-                  onChange={(event) => setQuoteText(event.target.value)}
-                  className="min-h-[220px] resize-none rounded-[24px] border-[--color-border-strong] bg-[--color-bg-elevated] text-[--color-text-primary] placeholder:text-[--color-text-muted]"
-                />
-                {longTextWarning ? (
-                  <p className="text-xs text-[--color-destructive]">
-                    Long quotes may not display well. Consider shortening.
-                  </p>
-                ) : null}
+              <div className="flex-1 px-6 py-5">
+                <div className="flex h-full flex-col space-y-3">
+                  <p className="text-sm font-medium text-black/45">Quote Text</p>
+                  <Textarea
+                    value={quoteText}
+                    onChange={(event) => setQuoteText(event.target.value)}
+                    className="min-h-[260px] flex-1 resize-none rounded-[28px] border-black/10 bg-white px-5 py-4 text-base leading-7 text-black shadow-[0_14px_32px_rgba(0,0,0,0.06)] placeholder:text-black/30 focus-visible:ring-black/10"
+                  />
+                  {longTextWarning ? (
+                    <p className="text-xs text-[--color-destructive]">
+                      Long quotes may not display well. Consider shortening.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-auto flex items-center gap-3 border-t border-black/10 px-6 py-5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="rounded-full px-4 text-black/55 hover:bg-black/[0.04] hover:text-black/75"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 rounded-full bg-[--color-primary] px-5 text-white hover:brightness-90"
+                  onClick={() => void handleSave()}
+                  disabled={isSaving}
+                >
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Image"}
+                </Button>
               </div>
             </div>
-
-            <div className="mt-auto flex items-center gap-3 pt-6">
-              <Button
-                type="button"
-                variant="ghost"
-                className="rounded-full px-4 text-[--color-text-secondary] hover:bg-white/5 hover:text-[--color-text-primary]"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                className="flex-1 rounded-full bg-[--color-primary] px-5 text-white hover:brightness-90"
-                onClick={() => void handleSave()}
-                disabled={isSaving}
-              >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Image"}
-              </Button>
-            </div>
           </div>
-        </div>
-      </DialogContent>
+        </DialogPrimitive.Content>
+      </DialogPortal>
     </Dialog>
   );
 }

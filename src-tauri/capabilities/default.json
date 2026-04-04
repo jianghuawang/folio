@@ -5,6 +5,9 @@
   "windows": ["main", "settings", "reader-*"],
   "permissions": [
     "core:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
     "dialog:default"
   ]
 }

@@ -163,6 +163,12 @@ pub fn run() {
                     let _ = persist_window_state(window, state.inner());
                 }
             }
+
+            if let WindowEvent::CloseRequested { .. } = event {
+                if window.label() == MAIN_WINDOW_LABEL {
+                    window.app_handle().exit(0);
+                }
+            }
         })
         .setup(|app| {
             let app_state = db::init_app_state(app.handle())?;

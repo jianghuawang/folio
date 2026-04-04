@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { message, open } from "@tauri-apps/plugin-dialog";
 
 import { BookContextMenu } from "@/components/library/BookContextMenu";
@@ -9,6 +9,7 @@ import { DuplicateBanner } from "@/components/library/DuplicateBanner";
 import { EmptyState } from "@/components/library/EmptyState";
 import { LibraryToolbar } from "@/components/library/LibraryToolbar";
 import { Sidebar } from "@/components/library/Sidebar";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useBooks, useDeleteBook, useImportBooks } from "@/hooks/useBooks";
 import { useLibraryFilter } from "@/hooks/useLibraryFilter";
 import { openReaderWindow } from "@/lib/tauri-commands";
@@ -58,6 +59,7 @@ export default function LibraryWindow() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [bookInfoId, setBookInfoId] = useState<string | null>(null);
   const [bookInfoOpen, setBookInfoOpen] = useState(false);
+  const [sidebarSheetOpen, setSidebarSheetOpen] = useState(false);
 
   const {
     section,
@@ -189,6 +191,23 @@ export default function LibraryWindow() {
       : `${allBooksQuery.data?.length ?? 0} books in your library.`;
   }, [allBooksQuery.data?.length, isSearchActive, section]);
 
+  useEffect(() => {
+    const standardLayoutQuery = window.matchMedia("(min-width: 700px) and (max-width: 999px)");
+
+    const syncSidebarSheet = () => {
+      if (!standardLayoutQuery.matches) {
+        setSidebarSheetOpen(false);
+      }
+    };
+
+    syncSidebarSheet();
+    standardLayoutQuery.addEventListener("change", syncSidebarSheet);
+
+    return () => {
+      standardLayoutQuery.removeEventListener("change", syncSidebarSheet);
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-[--color-bg-window] text-[--color-text-primary]">
       <DuplicateBanner titles={duplicateTitles} onDismiss={clearDuplicateTitles} />
@@ -205,6 +224,24 @@ export default function LibraryWindow() {
         </div>
       ) : null}
 
+      <Sheet open={sidebarSheetOpen} onOpenChange={setSidebarSheetOpen}>
+        <SheetContent
+          side="left"
+          className="w-[250px] border-r border-[--color-border] bg-[--color-bg-sidebar] p-0 text-[--color-text-primary] sm:max-w-[250px]"
+        >
+          <Sidebar
+            activeSection={section}
+            allCount={allBooksQuery.data?.length ?? 0}
+            recentCount={recentBooksQuery.data?.length ?? 0}
+            onSectionChange={(nextSection) => {
+              setSection(nextSection);
+              setSidebarSheetOpen(false);
+            }}
+            variant="sheet"
+          />
+        </SheetContent>
+      </Sheet>
+
       <div className="flex min-h-screen">
         <Sidebar
           activeSection={section}
@@ -220,6 +257,7 @@ export default function LibraryWindow() {
             onSearchChange={setSearchQuery}
             onClearSearch={clearSearch}
             onImportClick={() => void handleImportClick()}
+            onToggleSidebar={() => setSidebarSheetOpen(true)}
           />
 
           <div className="relative z-0 flex-1 px-6 py-8">

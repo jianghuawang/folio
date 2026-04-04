@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import {
   createEpubBridge,
@@ -62,6 +63,11 @@ export function EpubViewer({
   const onPositionRestoreErrorRef = useRef(onPositionRestoreError);
   const onSelectionChangeRef = useRef(onSelectionChange);
   const saveTimeoutRef = useRef<number | null>(null);
+  const latestLocationRef = useRef<ReaderLocationState | null>(null);
+  const lastPersistedLocationKeyRef = useRef(
+    `${book.last_position_cfi ?? ""}:${book.reading_progress.toFixed(6)}`,
+  );
+  const closeRequestPromiseRef = useRef<Promise<void> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +96,71 @@ export function EpubViewer({
   }, [onSelectionChange]);
 
   useEffect(() => {
+    latestLocationRef.current = book.last_position_cfi
+      ? {
+          atEnd: false,
+          atStart: false,
+          cfi: book.last_position_cfi,
+          chapterTitle: "",
+          href: "",
+          progress: book.reading_progress,
+        }
+      : null;
+    lastPersistedLocationKeyRef.current = `${book.last_position_cfi ?? ""}:${book.reading_progress.toFixed(6)}`;
+    closeRequestPromiseRef.current = null;
+  }, [book.id, book.last_position_cfi, book.reading_progress]);
+
+  const flushReadingPosition = useCallback(async () => {
+    const latestLocation = latestLocationRef.current;
+    if (!latestLocation?.cfi) {
+      return;
+    }
+
+    const nextLocationKey = `${latestLocation.cfi}:${latestLocation.progress.toFixed(6)}`;
+    if (nextLocationKey === lastPersistedLocationKeyRef.current) {
+      return;
+    }
+
+    await saveReadingPosition(book.id, latestLocation.cfi, latestLocation.progress);
+    lastPersistedLocationKeyRef.current = nextLocationKey;
+  }, [book.id]);
+
+  useEffect(() => {
+    const currentWindow = getCurrentWindow();
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void currentWindow.onCloseRequested(async () => {
+      if (!closeRequestPromiseRef.current) {
+        if (saveTimeoutRef.current) {
+          window.clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
+
+        closeRequestPromiseRef.current = flushReadingPosition().catch(() => undefined);
+      }
+
+      await closeRequestPromiseRef.current;
+
+      if (disposed) {
+        return;
+      }
+    }).then((registeredUnlisten) => {
+      if (disposed) {
+        registeredUnlisten();
+        return;
+      }
+
+      unlisten = registeredUnlisten;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [flushReadingPosition]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const container = containerRef.current;
@@ -113,6 +184,7 @@ export function EpubViewer({
         onHighlightActivateRef.current(payload);
       },
       onLocationChange: (location) => {
+        latestLocationRef.current = location;
         onLocationChangeRef.current(location);
 
         if (saveTimeoutRef.current) {
@@ -120,7 +192,8 @@ export function EpubViewer({
         }
 
         saveTimeoutRef.current = window.setTimeout(() => {
-          void saveReadingPosition(book.id, location.cfi, location.progress).catch(() => undefined);
+          saveTimeoutRef.current = null;
+          void flushReadingPosition().catch(() => undefined);
         }, 2000);
       },
       onNoteActivate: (note) => {
@@ -158,11 +231,13 @@ export function EpubViewer({
       cancelled = true;
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
       }
+      void flushReadingPosition().catch(() => undefined);
       bridgeRef.current?.destroy();
       bridgeRef.current = null;
     };
-  }, [book]);
+  }, [book, flushReadingPosition]);
 
   useEffect(() => {
     bridgeRef.current?.applyReadingSettings(readingSettings);

@@ -5,6 +5,7 @@ interface SidebarProps {
   allCount: number;
   recentCount: number;
   onSectionChange: (section: LibraryFilter) => void;
+  variant?: "docked" | "sheet";
 }
 
 function SidebarButton({
@@ -40,9 +41,17 @@ export function Sidebar({
   allCount,
   recentCount,
   onSectionChange,
+  variant = "docked",
 }: SidebarProps) {
   return (
-    <aside className="hidden w-[210px] shrink-0 border-r border-[--color-border] bg-[--color-bg-sidebar] px-4 py-6 min-[1000px]:block">
+    <aside
+      className={[
+        "w-[210px] shrink-0 bg-[--color-bg-sidebar] px-4 py-6",
+        variant === "docked"
+          ? "hidden border-r border-[--color-border] min-[1000px]:block"
+          : "w-full",
+      ].join(" ")}
+    >
       <div className="space-y-6">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-[--color-text-primary]">

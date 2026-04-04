@@ -117,6 +117,7 @@ export default function ReaderWindow() {
   const invalidPositionRestore = useReaderStore((state) => state.invalidPositionRestore);
   const noteEditor = useReaderStore((state) => state.noteEditor);
   const openNoteEditor = useReaderStore((state) => state.openNoteEditor);
+  const openQuoteCover = useReaderStore((state) => state.openQuoteCover);
   const quoteCover = useReaderStore((state) => state.quoteCover);
   const resetReaderState = useReaderStore((state) => state.resetReaderState);
   const selection = useReaderStore((state) => state.selection);
@@ -643,7 +644,8 @@ export default function ReaderWindow() {
           onOpenNote={handleOpenNoteEditor}
           onOpenQuote={() => {
             if (selection) {
-              useReaderStore.getState().openQuoteCover(selection.text);
+              openQuoteCover(selection.text);
+              clearSelection();
             }
           }}
           onRemoveHighlight={handleRemoveHighlightFromPopup}
