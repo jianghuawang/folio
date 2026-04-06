@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -22,6 +22,7 @@ import type {
   TranslationPausedEvent,
   TranslationProgressEvent,
 } from "@/types/events";
+import type { TranslationJob } from "@/types/translation";
 
 const TRANSLATION_LANGUAGES = [
   "English",
@@ -52,6 +53,8 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const currentLanguage = useReaderStore((state) => state.currentLanguage);
   const setBilingualMode = useReaderStore((state) => state.setBilingualMode);
   const setCurrentLanguage = useReaderStore((state) => state.setCurrentLanguage);
+  const activeJobIdRef = useRef<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [progressEvent, setProgressEvent] = useState<TranslationProgressEvent | null>(null);
   const [pausedEvent, setPausedEvent] = useState<TranslationPausedEvent | null>(null);
   const [latestError, setLatestError] = useState<TranslationErrorEvent | null>(null);
@@ -59,29 +62,54 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
-  const invalidateTranslationQueries = async (language: string | null = targetLanguage) => {
-    const invalidations = [
-      queryClient.invalidateQueries({ queryKey: ["translation-language", bookId] }),
-      queryClient.invalidateQueries({ queryKey: ["translation-job", bookId] }),
-      queryClient.invalidateQueries({ queryKey: ["translations", bookId] }),
-    ];
+  const setTrackedJobId = useCallback((jobId: string | null) => {
+    activeJobIdRef.current = jobId;
+    setActiveJobId(jobId);
+  }, []);
 
-    if (language) {
-      invalidations.push(
-        queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, language] }),
-        queryClient.invalidateQueries({ queryKey: ["translations", bookId, language] }),
-      );
-    }
+  const targetLanguage = currentLanguage ?? null;
 
-    await Promise.all(invalidations);
-  };
+  const invalidateTranslationQueries = useCallback(
+    async (language: string | null = targetLanguage) => {
+      const invalidations = [
+        queryClient.invalidateQueries({ queryKey: ["translation-language", bookId] }),
+        queryClient.invalidateQueries({ queryKey: ["translation-job", bookId] }),
+        queryClient.invalidateQueries({ queryKey: ["translations", bookId] }),
+      ];
 
-  const activateLanguage = async (language: string) => {
-    setStartError(null);
-    setCurrentLanguage(language);
-    setBilingualMode(true);
-    await invalidateTranslationQueries(language);
-  };
+      if (language) {
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, language] }),
+          queryClient.invalidateQueries({ queryKey: ["translations", bookId, language] }),
+        );
+      }
+
+      await Promise.all(invalidations);
+    },
+    [bookId, queryClient, targetLanguage],
+  );
+
+  const cacheJob = useCallback(
+    (job: TranslationJob) => {
+      if (!bookId) {
+        return;
+      }
+
+      queryClient.setQueryData(["translation-language", bookId], job.target_language);
+      queryClient.setQueryData(["translation-job", bookId, job.target_language], job);
+    },
+    [bookId, queryClient],
+  );
+
+  const activateLanguage = useCallback(
+    async (language: string) => {
+      setStartError(null);
+      setCurrentLanguage(language);
+      setBilingualMode(true);
+      await invalidateTranslationQueries(language);
+    },
+    [invalidateTranslationQueries, setBilingualMode, setCurrentLanguage],
+  );
 
   const availableLanguageQuery = useQuery({
     queryKey: ["translation-language", bookId],
@@ -98,18 +126,18 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     },
   });
 
-  const targetLanguage = currentLanguage ?? availableLanguageQuery.data ?? null;
+  const resolvedTargetLanguage = currentLanguage ?? availableLanguageQuery.data ?? null;
 
   const jobQuery = useQuery({
-    queryKey: ["translation-job", bookId, targetLanguage],
-    enabled: Boolean(bookId && targetLanguage),
-    queryFn: () => getTranslationJob(bookId as string, targetLanguage as string),
+    queryKey: ["translation-job", bookId, resolvedTargetLanguage],
+    enabled: Boolean(bookId && resolvedTargetLanguage),
+    queryFn: () => getTranslationJob(bookId as string, resolvedTargetLanguage as string),
   });
 
   const translationsQuery = useQuery({
-    queryKey: ["translations", bookId, targetLanguage],
-    enabled: Boolean(bookId && targetLanguage),
-    queryFn: () => getTranslations(bookId as string, targetLanguage as string),
+    queryKey: ["translations", bookId, resolvedTargetLanguage],
+    enabled: Boolean(bookId && resolvedTargetLanguage),
+    queryFn: () => getTranslations(bookId as string, resolvedTargetLanguage as string),
   });
 
   useEffect(() => {
@@ -120,20 +148,39 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   }, [availableLanguageQuery.data, currentLanguage, setBilingualMode, setCurrentLanguage]);
 
   useEffect(() => {
-    setStartError(null);
-  }, [bookId]);
+    setTrackedJobId(jobQuery.data?.id ?? null);
+  }, [jobQuery.data?.id, setTrackedJobId]);
 
   useEffect(() => {
-    if (
-      jobQuery.data?.status !== "paused" ||
-      pausedEvent?.reason !== "rate_limit" ||
-      !pausedEvent.retry_after_secs
-    ) {
+    setProgressEvent(null);
+    setPausedEvent(null);
+    setLatestError(null);
+    setRetryCountdown(null);
+  }, [activeJobId]);
+
+  useEffect(() => {
+    setStartError(null);
+    setTrackedJobId(null);
+    setProgressEvent(null);
+    setPausedEvent(null);
+    setLatestError(null);
+    setRetryCountdown(null);
+  }, [bookId, setTrackedJobId]);
+
+  const effectivePausedEvent =
+    pausedEvent && jobQuery.data && pausedEvent.job_id === jobQuery.data.id ? pausedEvent : null;
+
+  useEffect(() => {
+    const job = jobQuery.data;
+    const pauseReason = effectivePausedEvent?.reason ?? job?.pause_reason;
+    const initialCountdown = effectivePausedEvent?.retry_after_secs ?? 30;
+
+    if (job?.status !== "paused" || pauseReason !== "rate_limit") {
       setRetryCountdown(null);
       return undefined;
     }
 
-    setRetryCountdown(pausedEvent.retry_after_secs);
+    setRetryCountdown(initialCountdown);
 
     const intervalId = window.setInterval(() => {
       setRetryCountdown((currentValue) => {
@@ -149,7 +196,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [jobQuery.data?.status, pausedEvent]);
+  }, [effectivePausedEvent?.reason, effectivePausedEvent?.retry_after_secs, jobQuery.data]);
 
   useEffect(() => {
     if (!bookId) {
@@ -157,49 +204,52 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     }
 
     let active = true;
-
-    const jobId = jobQuery.data?.id ?? null;
+    let cleanup: (() => void) | undefined;
 
     const registerListeners = async () => {
       const unlistenProgress = await listen<TranslationProgressEvent>(
         "translation:progress",
         (event) => {
-          if (!active || (jobId && event.payload.job_id !== jobId)) {
+          const trackedJobId = activeJobIdRef.current;
+          if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
             return;
           }
 
           setProgressEvent(event.payload);
-          void invalidateTranslationQueries();
+          void invalidateTranslationQueries(resolvedTargetLanguage);
         },
       );
 
       const unlistenComplete = await listen<TranslationCompleteEvent>(
         "translation:complete",
         (event) => {
-          if (!active || (jobId && event.payload.job_id !== jobId)) {
+          const trackedJobId = activeJobIdRef.current;
+          if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
             return;
           }
 
-          void invalidateTranslationQueries();
+          void invalidateTranslationQueries(resolvedTargetLanguage);
         },
       );
 
       const unlistenError = await listen<TranslationErrorEvent>("translation:error", (event) => {
-        if (!active || (jobId && event.payload.job_id !== jobId)) {
+        const trackedJobId = activeJobIdRef.current;
+        if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
           return;
         }
 
         setLatestError(event.payload);
-        void invalidateTranslationQueries();
+        void invalidateTranslationQueries(resolvedTargetLanguage);
       });
 
       const unlistenPaused = await listen<TranslationPausedEvent>("translation:paused", (event) => {
-        if (!active || (jobId && event.payload.job_id !== jobId)) {
+        const trackedJobId = activeJobIdRef.current;
+        if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
           return;
         }
 
         setPausedEvent(event.payload);
-        void invalidateTranslationQueries();
+        void invalidateTranslationQueries(resolvedTargetLanguage);
       });
 
       const unlistenExportProgress = await listen<ExportProgressEvent>("export:progress", (event) => {
@@ -219,8 +269,6 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
       };
     };
 
-    let cleanup: (() => void) | undefined;
-
     void registerListeners().then((nextCleanup) => {
       cleanup = nextCleanup;
     });
@@ -229,7 +277,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
       active = false;
       cleanup?.();
     };
-  }, [bookId, jobQuery.data?.id, queryClient]);
+  }, [bookId, invalidateTranslationQueries, resolvedTargetLanguage]);
 
   const startMutation = useMutation({
     mutationFn: (payload: { language: string; replaceExisting?: boolean }) =>
@@ -238,11 +286,17 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
       setStartError(null);
     },
     onSuccess: async (job) => {
+      setTrackedJobId(job.id);
+      cacheJob(job);
       await activateLanguage(job.target_language);
     },
     onError: (error) => {
       if (!(error instanceof FolioError)) {
         setStartError("Failed to start translation.");
+        return;
+      }
+
+      if (error.code === "JOB_ALREADY_EXISTS" || error.code === "TRANSLATION_ALREADY_COMPLETE") {
         return;
       }
 
@@ -267,35 +321,45 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
 
   const pauseMutation = useMutation({
     mutationFn: () => pauseTranslation(jobQuery.data?.id as string),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, targetLanguage] });
+    onSuccess: async (job) => {
+      cacheJob(job);
+      setTrackedJobId(job.id);
+      await invalidateTranslationQueries(job.target_language);
     },
   });
 
   const resumeMutation = useMutation({
     mutationFn: () => resumeTranslation(jobQuery.data?.id as string),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, targetLanguage] });
+    onSuccess: async (job) => {
+      cacheJob(job);
+      setTrackedJobId(job.id);
+      setPausedEvent(null);
+      await invalidateTranslationQueries(job.target_language);
     },
   });
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelTranslation(jobQuery.data?.id as string),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, targetLanguage] });
+      setPausedEvent(null);
+      await invalidateTranslationQueries(resolvedTargetLanguage);
     },
   });
 
   const retryMutation = useMutation({
     mutationFn: () => retryFailedParagraphs(jobQuery.data?.id as string),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["translation-job", bookId, targetLanguage] });
+    onSuccess: async (job) => {
+      cacheJob(job);
+      setTrackedJobId(job.id);
+      setLatestError(null);
+      setPausedEvent(null);
+      await invalidateTranslationQueries(job.target_language);
     },
   });
 
   const exportMutation = useMutation({
     mutationFn: async () => {
-      if (!bookId || !targetLanguage) {
+      if (!bookId || !resolvedTargetLanguage) {
         return false;
       }
 
@@ -315,7 +379,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         return false;
       }
 
-      await exportBilingualEpub(bookId, targetLanguage, savePath);
+      await exportBilingualEpub(bookId, resolvedTargetLanguage, savePath);
       return true;
     },
     onMutate: () => {
@@ -338,15 +402,18 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
       return null;
     }
 
-    if (job.status === "paused" && job.pause_reason === "app_restart") {
+    const pauseReason = effectivePausedEvent?.reason ?? job.pause_reason;
+
+    if (job.status === "paused" && pauseReason === "app_restart") {
       return `Continue translating '${bookTitle}'?`;
     }
 
-    if (job.status === "paused" && pausedEvent?.reason === "rate_limit") {
-      return `Translation paused (rate limit reached). Will retry in ${retryCountdown ?? pausedEvent.retry_after_secs ?? 30}s.`;
+    if (job.status === "paused" && pauseReason === "rate_limit") {
+      const seconds = retryCountdown ?? effectivePausedEvent?.retry_after_secs ?? 30;
+      return `Translation paused (rate limit reached). Will retry in ${seconds}s.`;
     }
 
-    if (job.status === "paused" && pausedEvent?.reason === "network") {
+    if (job.status === "paused" && pauseReason === "network") {
       return "Translation paused (no internet connection).";
     }
 
@@ -367,13 +434,13 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     }
 
     return null;
-  }, [bookTitle, jobQuery.data, pausedEvent, progressEvent, retryCountdown]);
+  }, [bookTitle, effectivePausedEvent, jobQuery.data, progressEvent, retryCountdown]);
 
   return {
     availableLanguages: TRANSLATION_LANGUAGES,
     bilingualMode,
     canExport,
-    currentLanguage: targetLanguage,
+    currentLanguage: resolvedTargetLanguage,
     activateLanguage,
     clearStartError: () => setStartError(null),
     exportMutation,

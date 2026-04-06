@@ -8,9 +8,10 @@
 
 1. **OpenRouter is the only translation provider in MVP.** There is no provider abstraction, provider dropdown, or custom base URL in the product surface.
 2. **Folio is a managed library.** On import, the `.epub` is copied into `~/Library/Application Support/Folio/Books/`, and that managed copy is the only file the reader opens.
-3. **Translation is done in paragraph units.** One paragraph maps to one translation request, one translation record, and one export insertion point.
-4. **Translated paragraphs are identified by location, not by hash alone.** The primary key is `spine_item_href + paragraph_index`; `paragraph_hash` is retained only for validation and retry bookkeeping.
-5. **The renderer never receives the saved API key.** It can only ask whether a key exists, save a replacement key, clear the saved key, or request a Rust-side connection test.
+3. **Translation is stored and rendered in paragraph units, but OpenRouter transport is chunked.** The worker sends batches of 10–20 consecutive paragraphs per request (with a smaller tail batch allowed at the end of a spine item), while still persisting and rendering one translation row per paragraph.
+4. **Each translation batch request expects a structured response.** The model must return a JSON array of `{ paragraph_index, translated_html }` items aligned to the input paragraphs in order; malformed or mismatched responses are retried in smaller chunks before any paragraph is marked failed.
+5. **Translated paragraphs are identified by location, not by hash alone.** The primary key is `spine_item_href + paragraph_index`; `paragraph_hash` is retained only for validation and retry bookkeeping.
+6. **The renderer never receives the saved API key.** It can only ask whether a key exists, save a replacement key, clear the saved key, or request a Rust-side connection test.
 
 ---
 
@@ -98,8 +99,8 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │       │   └── exporter.rs       ← Assemble bilingual ePub ZIP from translations table using spine_item_href + paragraph_index locators
 │       ├── llm/
 │       │   ├── mod.rs            ← Re-exports; LlmClient struct definition
-│       │   ├── client.rs         ← reqwest client; builds OpenRouter request, sanitizes response; single `translate_paragraph(html, lang, model) -> String` fn
-│       │   └── worker.rs         ← Translation job runner; spawned as tokio task; paragraph loop by spine_item_href + paragraph_index; pause/resume via Arc<AtomicBool>; emits Tauri events per paragraph
+│       │   ├── client.rs         ← reqwest client; builds chunked OpenRouter request, parses structured array response, sanitizes each returned paragraph fragment; single `translate_chunk(paragraphs, lang, model) -> Vec<ChunkTranslation>` fn
+│       │   └── worker.rs         ← Translation job runner; spawned as tokio task; chunk loop over consecutive paragraph locators; pause/resume via Arc<AtomicBool>; emits Tauri events per persisted paragraph
 │       └── keychain.rs           ← Thin wrapper around `keyring` crate for service "com.folio.app"
 │
 ├── src/                          ← React frontend (renderer process)
@@ -131,7 +132,7 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │   │   │   ├── AnnotationsDrawer.tsx ← Floating annotations dropdown panel with tabs + export action
 │   │   │   ├── DisplaySettingsPopover.tsx ← Aa popover: fully opaque font size / family / line height / theme card
 │   │   │   ├── TranslationBanner.tsx ← Fixed top banner during translation; Pause / Cancel
-│   │   │   ├── TranslationSheet.tsx ← Modal: language dropdown + Start Translation
+│   │   │   ├── TranslationSheet.tsx ← Floating translation dropdown panel with language selector + Start Translation
 │   │   │   ├── QuoteCoverModal.tsx ← 800×600 modal; canvas preview + controls
 │   │   │   ├── PageChevrons.tsx  ← < > nav buttons, persist on screen while reading
 │   │   │   └── ProgressBar.tsx   ← Bottom bar: "{Chapter Title} · {X}%"
@@ -156,7 +157,7 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │   ├── lib/
 │   │   ├── tauri-commands.ts     ← One typed wrapper function per Tauri command; ALL invoke() calls live here
 │   │   ├── epub-bridge.ts        ← Initializes epub.js Book + Rendition; exports typed event helpers
-│   │   ├── quote-canvas.ts       ← Renders quote cover to offscreen HTMLCanvasElement; returns Blob
+│   │   ├── quote-canvas.ts       ← Renders quote cover to offscreen HTMLCanvasElement; returns Blob, auto-scaling full-paragraph quote layout to fit the card
 │   │   └── utils.ts              ← cn() for class merging, pluralize(), formatPercent(), hashStringToColor()
 │   ├── types/
 │   │   ├── book.ts               ← Book, BookSummary, LibraryFilter interfaces
@@ -446,7 +447,7 @@ src/windows/ReaderWindow.tsx    ← reads ?bookId from URL
         ├── <AnnotationsDrawer> ← custom floating dropdown panel, anchored under the left menu cluster
         ├── <DisplaySettingsPopover> ← custom opaque popover anchored to Aa button
         ├── <TranslationBanner> ← fixed top strip; shown when job status = 'in_progress'|'paused'
-        ├── <TranslationSheet>  ← shadcn Dialog; language dropdown + Start Translation
+        ├── <TranslationSheet>  ← custom floating dropdown panel, anchored under the right utility cluster; language dropdown + Start Translation
         └── <QuoteCoverModal>   ← shadcn Dialog 800px; left preview / right controls
 
 src/windows/SettingsWindow.tsx
@@ -494,7 +495,7 @@ Active nav state: Sidebar items compare current `SidebarSection` enum value from
 - **Page transitions:** none — Tauri windows are native; transitions inside the reader are instant page flips
 - **Reader keyboard navigation:** `ArrowRight` and `ArrowDown` advance one page; `ArrowLeft` and `ArrowUp` go back one page
 - **Reader toolbar:** persistently visible while reading; no hover-reveal or idle-fade behavior
-- **Reader dropdown menus (TOC / Annotations):** custom fade + slight scale animation, 160ms; anchored to the left menu cluster with a visible notch
+- **Reader dropdown menus (TOC / Annotations / Translation):** custom fade + slight scale animation, 160ms; TOC and Annotations anchor to the left menu cluster, Translation anchors to the right utility cluster, each with a visible notch
 - **Loading skeletons:** `animate-pulse` Tailwind class; BookCard skeleton = 160×220 rounded rect + two text bars
 - **Button states:**
   - default: base color
@@ -658,7 +659,7 @@ Returns: TranslationJob   // status: "paused"
 ```
 Args:    { job_id: string }
 Returns: TranslationJob   // status: "in_progress"
-Side effect: Restarts tokio task from last completed paragraph
+Side effect: Restarts tokio task from the first untranslated paragraph and rebuilds chunk requests from there
 ```
 
 **`cancel_translation`**
@@ -683,7 +684,7 @@ Returns: TranslationJob | null
 ```
 Args:    { job_id: string }
 Returns: TranslationJob
-Side effect: Re-enqueues only paragraphs in failed_paragraph_locators
+Side effect: Re-enqueues only paragraphs in failed_paragraph_locators, regrouping them into chunk requests while preserving paragraph-level failure bookkeeping
 ```
 
 **Tauri Events emitted by translation worker (Rust → Frontend):**
@@ -779,15 +780,19 @@ Side effect: Sends one OpenRouter translate "Hello" → "English" request; does 
 
 8. **Translation injection into epub.js content uses `rendition.hooks.content.register()`** to intercept each rendered page's `document`, enumerate translatable paragraphs in DOM order within the current spine item, assign each one a deterministic `paragraph_index`, and insert `<p class="folio-translation">` elements immediately after the matching `spine_item_href + paragraph_index` location.
 
-9. **Every translated HTML fragment is sanitized in Rust before it is written to SQLite.** Allow only the inline tags already present in the source paragraph plus a fixed safe subset (`em`, `strong`, `b`, `i`, `u`, `span`, `br`, `sup`, `sub`, `code`). Strip scripts, styles, event handlers, external URLs, and block-level elements. If sanitization changes the structure in a way that breaks tag balance, mark the paragraph as failed instead of rendering it.
+9. **The Rust translation worker batches 10–20 consecutive paragraphs per OpenRouter request and requires a structured JSON array response.** If a chunk response is malformed, missing items, or fails sanitization for one or more paragraphs, the worker retries the chunk once, then retries smaller chunks until it can isolate the failing paragraph(s).
 
-10. **Debounce reading position saves to at most once per 2 seconds.** Implement with `useRef` storing a `setTimeout` handle; clear and reset on every `rendition.on('relocated')` event.
+10. **Every translated HTML fragment is sanitized in Rust before it is written to SQLite.** Allow only the inline tags already present in the source paragraph plus a fixed safe subset (`em`, `strong`, `b`, `i`, `u`, `span`, `br`, `sup`, `sub`, `code`). Strip scripts, styles, event handlers, external URLs, and block-level elements. If sanitization changes the structure in a way that breaks tag balance, mark only the affected paragraph as failed instead of rendering unsafe or invalid HTML.
 
-11. **SQLite connection is a `Mutex<Connection>` stored in Tauri `AppState`.** All DB operations acquire the lock, execute synchronously (rusqlite is synchronous), and release. Never share the raw Connection across threads.
+11. **Debounce reading position saves to at most once per 2 seconds.** Implement with `useRef` storing a `setTimeout` handle; clear and reset on every `rendition.on('relocated')` event.
 
-12. **The `tauri.conf.json` Content Security Policy for all windows:** `"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; connect-src 'self' ipc: http://ipc.localhost"`. `unsafe-inline` for style is required by epub.js for theme injection.
+12. **SQLite connection is a `Mutex<Connection>` stored in Tauri `AppState`.** All DB operations acquire the lock, execute synchronously (rusqlite is synchronous), and release. Never share the raw Connection across threads.
 
-13. **Window position persistence is handled in Rust for every window type.** Tauri window `Moved`/`Resized` events write `window_state_library`, `window_state_settings`, or `window_state_{bookId}` directly into `app_settings`. On window creation, Rust restores size/position before showing the window.
+13. **The `tauri.conf.json` Content Security Policy for all windows:** `"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; connect-src 'self' ipc: http://ipc.localhost"`. `unsafe-inline` for style is required by epub.js for theme injection.
+
+14. **Window position persistence is handled in Rust for every window type.** Tauri window `Moved`/`Resized` events write `window_state_library`, `window_state_settings`, or `window_state_{bookId}` directly into `app_settings`. On window creation, Rust restores size/position before showing the window.
+
+15. **Quote covers must render the full edited paragraph without truncation.** In `src/lib/quote-canvas.ts`, wrap the quote text across as many lines as needed within the quote block and shrink the quote font until the entire paragraph fits inside the 1080×1080 composition without ellipsis.
 
 ---
 
@@ -928,8 +933,8 @@ Tauri commands run on a tokio thread pool. Multiple simultaneous commands each a
 ---
 
 ⚠️ **Risk: LLM API rate limits stalling translation**
-OpenRouter imposes per-minute rate limits. Paragraph-by-paragraph reqwest calls can hit these quickly for large books.
-**Mitigation:** In `llm/worker.rs`, inspect the HTTP response status. On 429, read the `Retry-After` response header (default 30s if absent), set the pause `AtomicBool`, emit a `translation:paused { reason: "rate_limit", retry_after_secs }` Tauri event, sleep via `tokio::time::sleep`, then resume automatically. Per-request timeout enforced via `reqwest::ClientBuilder::timeout(Duration::from_secs(30))`. One automatic retry per paragraph before marking as failed.
+OpenRouter imposes per-minute rate limits. Even sequential full-book translation can hit those limits if the worker sends too many small requests.
+**Mitigation:** In `llm/worker.rs`, translate consecutive paragraphs in 10–20 paragraph chunks to reduce request volume. On 429, read the `Retry-After` response header (default 30s if absent), set the pause `AtomicBool`, emit a `translation:paused { reason: "rate_limit", retry_after_secs }` Tauri event, sleep via `tokio::time::sleep`, then resume automatically. Per-request timeout enforced via `reqwest::ClientBuilder::timeout(Duration::from_secs(30))`. One automatic retry per chunk before the worker splits that chunk into smaller chunks to isolate failures.
 
 ---
 
@@ -946,8 +951,8 @@ Some ePub 3 books use JavaScript, multimedia, or complex fixed-layout that epub.
 ---
 
 ⚠️ **Risk: translated HTML can inject unsafe markup into the reader iframe**
-OpenRouter returns model-generated HTML fragments. If these are inserted directly, malformed or unsafe markup can break rendering or create an XSS surface inside the webview.
-**Mitigation:** Sanitize every translation fragment in Rust before it is persisted. Allow only the safe inline tag subset listed in §6, strip all attributes except a constrained `class` allowlist when needed, and reject the paragraph if the sanitized fragment does not remain a valid inline HTML fragment.
+OpenRouter returns model-generated structured output that still contains HTML fragments per paragraph. If these are inserted directly, malformed or unsafe markup can break rendering or create an XSS surface inside the webview.
+**Mitigation:** Parse the model response as a JSON array first, then sanitize every returned paragraph fragment in Rust before it is persisted. Allow only the safe inline tag subset listed in §6, strip all attributes except a constrained `class` allowlist when needed, and reject only the affected paragraph if the sanitized fragment does not remain a valid inline HTML fragment.
 
 ---
 
@@ -968,7 +973,7 @@ OpenRouter returns model-generated HTML fragments. If these are inserted directl
 ---
 
 ### OpenRouter API (LLM translation)
-- **Used for:** All full-book paragraph translation; called from Rust backend via reqwest
+- **Used for:** All full-book chunked translation; called from Rust backend via reqwest
 - **Endpoint:** `POST https://openrouter.ai/api/v1/chat/completions`
 - **Model:** `google/gemini-2.5-flash-lite-preview`
 - **Env vars:** None at build time. OpenRouter API key stored in macOS Keychain (service `"com.folio.app"`, account `"llm_api_key"`); read by Rust at translation time.
@@ -986,22 +991,27 @@ OpenRouter returns model-generated HTML fragments. If these are inserted directl
   "model": "google/gemini-2.5-flash-lite-preview",
   "messages": [
     {
+      "role": "system",
+      "content": "Translate EPUB paragraph batches. Return only a JSON array. Each array item must be {\"paragraph_index\": number, \"translated_html\": string}. Preserve the existing inline HTML formatting tags inside each translated_html value and do not add wrapper elements or commentary."
+    },
+    {
       "role": "user",
-      "content": "Translate the following text to {target_language}. Preserve only the existing inline HTML formatting tags. Return only the translated HTML fragment, no explanation.\n\n{paragraph_html}"
+      "content": "{\"target_language\":\"{target_language}\",\"paragraphs\":[{\"paragraph_index\":12,\"html\":\"<span>...</span>\"},{\"paragraph_index\":13,\"html\":\"...\"}]}"
     }
   ],
   "max_tokens": 2048
 }
 ```
 
-**Response:** standard OpenRouter chat completion; extract `choices[0].message.content`, sanitize it, then persist the sanitized fragment as `translated_html`.
+**Response:** standard OpenRouter chat completion; extract `choices[0].message.content`, parse it as a JSON array of `{ paragraph_index, translated_html }`, sanitize each `translated_html`, then persist each accepted paragraph fragment independently.
 
 **Translation worker (`src-tauri/src/llm/worker.rs`):**
 - Spawned as a `tokio::task::spawn` from `start_translation` command
-- Iterates paragraphs by `spine_item_href + paragraph_index`; calls `client::translate_paragraph()` per paragraph
-- After each success: writes to `translations` table, increments `translation_jobs.completed_paragraphs`, emits `translation:progress` Tauri event
+- Iterates paragraphs by `spine_item_href + paragraph_index`, groups consecutive locators into 10–20 paragraph chunks, and calls `client::translate_chunk()` per chunk
+- After each accepted paragraph in a validated chunk response: writes to `translations` table, increments `translation_jobs.completed_paragraphs`, emits `translation:progress` Tauri event
 - Pause/resume: checks `Arc<AtomicBool> pause_flag` before each call; sleeps in a `tokio::time::sleep` loop when paused
 - Cancel: checks `Arc<AtomicBool> cancel_flag`; breaks loop, sets job status `"cancelled"`
+- Chunk failure isolation: on retryable failures, retries the full chunk once, then recursively retries smaller chunks until the worker can identify the failing paragraph(s) to record in `failed_paragraph_locators`
 - On app restart: `lib.rs` converts any `status = 'in_progress'` jobs to `status = 'paused'` with `pause_reason = 'app_restart'`; when the user next opens that book, the reader prompts whether to resume or stop
 
 - **Reference docs:** https://openrouter.ai/docs/api-reference/chat-completions
@@ -1034,6 +1044,7 @@ OpenRouter returns model-generated HTML fragments. If these are inserted directl
 | Restart during translation | `translation_jobs.status` becomes `paused` with `pause_reason = 'app_restart'`; next open of the book prompts Continue/Stop |
 | Translate book with repeated identical paragraphs | Each location gets its own translation row because lookup is by `spine_item_href + paragraph_index`, not by hash alone |
 | Receive unsafe translated HTML | Rust sanitizer strips/rejects unsafe markup; failed paragraph is recorded without injecting unsafe DOM |
+| Create quote cover from a long paragraph | Preview and saved PNG both contain the full paragraph; the quote font scales down as needed; no ellipsis is rendered |
 | Save existing note as whitespace-only | Backend deletes the note and returns `null`; UI removes the note indicator |
 | Open book whose managed library file is missing | Reader refuses to open, shows managed-file-missing error, and does not offer external file relinking |
 | Save API key in dev build with Keychain unavailable | Command returns `KEYCHAIN_ERROR`; no plaintext fallback file is created |

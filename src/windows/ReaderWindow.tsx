@@ -142,9 +142,16 @@ export default function ReaderWindow() {
   const openToc = useReaderStore((state) => state.openToc);
   const translationSheetOpen = useReaderStore((state) => state.translationSheetOpen);
   const openTranslationSheet = useReaderStore((state) => state.openTranslationSheet);
+  const toggleTranslationSheet = useReaderStore((state) => state.toggleTranslationSheet);
 
   const [tocItems, setTocItems] = useState<ReaderTocItem[]>([]);
   const lastTranslationErrorRef = useRef<string | null>(null);
+  const highlightsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const leftClusterRef = useRef<HTMLDivElement | null>(null);
+  const notesTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const tocTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const translationClusterRef = useRef<HTMLDivElement | null>(null);
+  const translationTriggerRef = useRef<HTMLButtonElement | null>(null);
   const allHighlights = highlightsQuery.data ?? [];
 
   useEffect(() => {
@@ -614,17 +621,27 @@ export default function ReaderWindow() {
           annotationsTab={annotationsTab}
           canExport={translation.canExport}
           canTranslate={apiKeyStatusQuery.data?.configured ?? false}
+          highlightsTriggerRef={highlightsTriggerRef}
+          leftClusterRef={leftClusterRef}
+          notesTriggerRef={notesTriggerRef}
           onExport={() => void translation.exportMutation.mutateAsync()}
           onOpenHighlights={() => toggleAnnotations("highlights")}
           onOpenNotes={() => toggleAnnotations("notes")}
-          onOpenTranslationSheet={openTranslationSheet}
+          onToggleTranslation={() => {
+            translation.clearStartError();
+            toggleTranslationSheet();
+          }}
           onToggleBilingualMode={() => translation.setBilingualMode(!translation.bilingualMode)}
           onToggleToc={toggleToc}
           onUpdateReadingSettings={(payload) => void updateReadingSettingsMutation.mutateAsync(payload)}
           readingSettings={currentReadingSettings}
           showBilingualToggle={Boolean(translation.currentLanguage)}
           tocOpen={tocOpen}
+          tocTriggerRef={tocTriggerRef}
           title={book.title}
+          translationClusterRef={translationClusterRef}
+          translationOpen={translationSheetOpen}
+          translationTriggerRef={translationTriggerRef}
         />
 
         <TranslationBanner
@@ -659,6 +676,8 @@ export default function ReaderWindow() {
         <ProgressBar chapterTitle={location.chapterTitle} progress={location.progress} />
 
         <TocDrawer
+          anchorElement={tocTriggerRef.current}
+          clusterElement={leftClusterRef.current}
           currentHref={location.href}
           items={tocItems}
           open={tocOpen}
@@ -704,6 +723,10 @@ export default function ReaderWindow() {
 
         <AnnotationsDrawer
           activeTab={annotationsTab}
+          anchorElement={
+            annotationsTab === "notes" ? notesTriggerRef.current : highlightsTriggerRef.current
+          }
+          clusterElement={leftClusterRef.current}
           exportDisabled={allHighlights.length === 0}
           exportErrorMessage={exportHighlightsErrorMessage}
           exportPending={exportHighlightsMutation.isPending}
@@ -732,7 +755,9 @@ export default function ReaderWindow() {
         />
 
         <TranslationSheet
+          anchorElement={translationTriggerRef.current}
           availableLanguages={translation.availableLanguages}
+          clusterElement={translationClusterRef.current}
           currentLanguage={translation.currentLanguage}
           errorMessage={translation.startError}
           job={translation.job}

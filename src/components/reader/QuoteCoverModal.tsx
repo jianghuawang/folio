@@ -248,8 +248,8 @@ export function QuoteCoverModal({
                     className="min-h-[260px] flex-1 resize-none rounded-[28px] border-black/10 bg-white px-5 py-4 text-base leading-7 text-black shadow-[0_14px_32px_rgba(0,0,0,0.06)] placeholder:text-black/30 focus-visible:ring-black/10"
                   />
                   {longTextWarning ? (
-                    <p className="text-xs text-[--color-destructive]">
-                      Long quotes may not display well. Consider shortening.
+                    <p className="text-xs text-black/45">
+                      Long quotes will be scaled down to fit the cover.
                     </p>
                   ) : null}
                 </div>

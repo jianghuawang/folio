@@ -1,5 +1,12 @@
+import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { normalizeTocHref, type ReaderTocItem } from "@/lib/epub-bridge";
+
+const NOTCH_HORIZONTAL_PADDING_PX = 28;
+const NOTCH_SIZE_PX = 24;
+const PANEL_VERTICAL_OFFSET_PX = 18;
+const PANEL_VIEWPORT_PADDING_PX = 16;
+const TOC_PANEL_MAX_WIDTH_PX = 440;
 
 const TOC_INDENT_CLASS_NAMES = {
   0: "pl-4",
@@ -9,6 +16,8 @@ const TOC_INDENT_CLASS_NAMES = {
 } as const;
 
 interface TocDrawerProps {
+  anchorElement: HTMLElement | null;
+  clusterElement: HTMLElement | null;
   currentHref: string;
   items: ReaderTocItem[];
   open: boolean;
@@ -16,7 +25,56 @@ interface TocDrawerProps {
   onSelect: (href: string) => void;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function resolvePanelPosition({
+  anchorElement,
+  clusterElement,
+  viewportWidth,
+}: Pick<TocDrawerProps, "anchorElement" | "clusterElement"> & {
+  viewportWidth: number;
+}) {
+  const panelWidth = Math.min(
+    TOC_PANEL_MAX_WIDTH_PX,
+    Math.max(320, viewportWidth - PANEL_VIEWPORT_PADDING_PX * 2),
+  );
+  const anchorRect = anchorElement?.getBoundingClientRect() ?? null;
+  const clusterRect = clusterElement?.getBoundingClientRect() ?? anchorRect;
+  const panelCenterX = clusterRect
+    ? clusterRect.left + clusterRect.width / 2
+    : anchorRect
+      ? anchorRect.left + anchorRect.width / 2
+      : PANEL_VIEWPORT_PADDING_PX + panelWidth / 2;
+  const left = clamp(
+    panelCenterX - panelWidth / 2,
+    PANEL_VIEWPORT_PADDING_PX,
+    viewportWidth - PANEL_VIEWPORT_PADDING_PX - panelWidth,
+  );
+  const top = (clusterRect?.bottom ?? anchorRect?.bottom ?? 64) + PANEL_VERTICAL_OFFSET_PX;
+  const notchTargetX = anchorRect
+    ? anchorRect.left + anchorRect.width / 2
+    : clusterRect
+      ? clusterRect.left + clusterRect.width / 2
+      : panelCenterX;
+  const notchCenterX = clamp(
+    notchTargetX - left,
+    NOTCH_HORIZONTAL_PADDING_PX,
+    panelWidth - NOTCH_HORIZONTAL_PADDING_PX,
+  );
+
+  return {
+    left,
+    notchLeft: notchCenterX - NOTCH_SIZE_PX / 2,
+    top,
+    width: panelWidth,
+  };
+}
+
 export function TocDrawer({
+  anchorElement,
+  clusterElement,
   currentHref,
   items,
   open,
@@ -24,6 +82,58 @@ export function TocDrawer({
   onSelect,
 }: TocDrawerProps) {
   const normalizedCurrentHref = normalizeTocHref(currentHref);
+  const [panelPosition, setPanelPosition] = useState(() =>
+    resolvePanelPosition({
+      anchorElement: null,
+      clusterElement: null,
+      viewportWidth: typeof window === "undefined" ? 1440 : window.innerWidth,
+    }),
+  );
+
+  useLayoutEffect(() => {
+    if (!open || typeof window === "undefined") {
+      return;
+    }
+
+    let animationFrameId = 0;
+
+    const updatePosition = () => {
+      setPanelPosition(
+        resolvePanelPosition({
+          anchorElement,
+          clusterElement,
+          viewportWidth: window.innerWidth,
+        }),
+      );
+    };
+
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(updatePosition);
+    };
+
+    updatePosition();
+    scheduleUpdate();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+
+    if (anchorElement) {
+      resizeObserver?.observe(anchorElement);
+    }
+
+    if (clusterElement && clusterElement !== anchorElement) {
+      resizeObserver?.observe(clusterElement);
+    }
+
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [anchorElement, clusterElement, open]);
 
   if (!open) {
     return null;
@@ -31,12 +141,22 @@ export function TocDrawer({
 
   return createPortal(
     <div className="fixed inset-0 z-40" onMouseDown={() => onOpenChange(false)}>
-      <div className="absolute left-5 right-4 top-20 flex justify-start">
+      <div
+        className="absolute"
+        style={{
+          left: panelPosition.left,
+          top: panelPosition.top,
+          width: panelPosition.width,
+        }}
+      >
         <div
-          className="pointer-events-auto relative w-full max-w-[604px]"
+          className="pointer-events-auto relative w-full origin-top-left animate-in zoom-in-95 duration-[160ms] ease-out"
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <div className="absolute left-[68px] top-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/88" />
+          <div
+            className="absolute top-0 h-6 w-6 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/88"
+            style={{ left: panelPosition.notchLeft }}
+          />
 
           <div className="overflow-hidden rounded-[34px] border border-black/10 bg-white/84 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px]">
             <div className="border-b border-black/10 px-6 py-5 text-center">

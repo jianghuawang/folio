@@ -5,7 +5,7 @@ import {
   Menu,
   NotebookTabs,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { DisplaySettingsPopover } from "@/components/reader/DisplaySettingsPopover";
 import { Button } from "@/components/ui/button";
@@ -17,27 +17,36 @@ interface ReaderToolbarProps {
   annotationsTab: ReaderAnnotationsTab;
   canExport: boolean;
   canTranslate: boolean;
+  highlightsTriggerRef?: Ref<HTMLButtonElement>;
+  leftClusterRef?: Ref<HTMLDivElement>;
+  notesTriggerRef?: Ref<HTMLButtonElement>;
   onExport: () => void;
   onOpenHighlights: () => void;
   onOpenNotes: () => void;
-  onOpenTranslationSheet: () => void;
+  onToggleTranslation: () => void;
   onToggleBilingualMode: () => void;
   onToggleToc: () => void;
   onUpdateReadingSettings: (payload: Partial<ReadingSettings>) => void;
   readingSettings: ReadingSettings;
   showBilingualToggle: boolean;
   tocOpen: boolean;
+  tocTriggerRef?: Ref<HTMLButtonElement>;
   title: string;
+  translationClusterRef?: Ref<HTMLDivElement>;
+  translationOpen: boolean;
+  translationTriggerRef?: Ref<HTMLButtonElement>;
 }
 
 function ToolbarIconButton({
   active = false,
+  buttonRef,
   disabled = false,
   icon,
   label,
   onClick,
 }: {
   active?: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
@@ -50,6 +59,7 @@ function ToolbarIconButton({
       size="icon"
       disabled={disabled}
       onClick={onClick}
+      ref={buttonRef}
       className={[
         "h-10 w-10 rounded-full disabled:cursor-not-allowed disabled:opacity-40",
         active
@@ -69,35 +79,48 @@ export function ReaderToolbar({
   annotationsTab,
   canExport,
   canTranslate,
+  highlightsTriggerRef,
+  leftClusterRef,
+  notesTriggerRef,
   onExport,
   onOpenHighlights,
   onOpenNotes,
-  onOpenTranslationSheet,
+  onToggleTranslation,
   onToggleBilingualMode,
   onToggleToc,
   onUpdateReadingSettings,
   readingSettings,
   showBilingualToggle,
   tocOpen,
+  tocTriggerRef,
   title,
+  translationClusterRef,
+  translationOpen,
+  translationTriggerRef,
 }: ReaderToolbarProps) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-5 pt-3">
       <div className="pointer-events-auto absolute left-5 top-5 flex items-center">
-        <div className="flex items-center gap-1 rounded-full border border-black/5 bg-white/88 p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.16)] backdrop-blur-[24px]">
+        <div
+          ref={leftClusterRef}
+          className="flex items-center gap-1 rounded-full border border-black/5 bg-white/88 p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.16)] backdrop-blur-[24px]"
+        >
           <ToolbarIconButton
+            buttonRef={tocTriggerRef}
             icon={<Menu className="h-5 w-5 stroke-[1.75]" />}
             active={tocOpen}
             label="Contents"
             onClick={onToggleToc}
           />
           <ToolbarIconButton
+            buttonRef={highlightsTriggerRef}
             icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />}
             active={annotationsOpen && annotationsTab === "highlights"}
             label="Highlights"
             onClick={onOpenHighlights}
           />
           <ToolbarIconButton
+            buttonRef={notesTriggerRef}
             icon={<NotebookTabs className="h-5 w-5 stroke-[1.75]" />}
             active={annotationsOpen && annotationsTab === "notes"}
             label="Notes"
@@ -111,7 +134,10 @@ export function ReaderToolbar({
       </div>
 
       <div className="pointer-events-auto absolute right-5 top-5 flex items-center">
-        <div className="flex items-center gap-1 rounded-full border border-[#ece7df] bg-white/92 p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.14)] backdrop-blur-[20px]">
+        <div
+          ref={translationClusterRef}
+          className="flex items-center gap-1 rounded-full border border-[#ece7df] bg-white/92 p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.14)] backdrop-blur-[20px]"
+        >
           <DisplaySettingsPopover
             disabled={false}
             onUpdate={onUpdateReadingSettings}
@@ -119,10 +145,12 @@ export function ReaderToolbar({
           />
 
           <ToolbarIconButton
+            buttonRef={translationTriggerRef}
             disabled={!canTranslate}
             icon={<Languages className="h-5 w-5 stroke-[1.75]" />}
+            active={translationOpen}
             label="Translate book"
-            onClick={onOpenTranslationSheet}
+            onClick={onToggleTranslation}
           />
 
           {showBilingualToggle ? (

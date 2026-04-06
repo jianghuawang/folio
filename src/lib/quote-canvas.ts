@@ -29,7 +29,6 @@ interface RenderQuoteCoverOptions {
 
 interface WrappedQuote {
   lines: string[];
-  truncated: boolean;
 }
 
 interface QuoteCoverCardPalette {
@@ -162,34 +161,12 @@ function findPreferredBreakIndex(text: string) {
   return -1;
 }
 
-function fitLineWithEllipsis(
+function wrapSingleTextBlock(
   context: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
 ) {
-  let candidate = text.trimEnd();
-
-  while (candidate.length > 0 && context.measureText(`${candidate}…`).width > maxWidth) {
-    candidate = candidate.slice(0, -1).trimEnd();
-  }
-
-  return `${candidate}…`;
-}
-
-function wrapText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-  maxLines: number,
-): WrappedQuote {
-  const characters = Array.from(text.trim().replace(/\s+/g, " "));
-  if (characters.length === 0) {
-    return {
-      lines: [""],
-      truncated: false,
-    };
-  }
-
+  const characters = Array.from(text);
   const lines: string[] = [];
   let currentLine = "";
 
@@ -215,23 +192,37 @@ function wrapText(
     lines.push(currentLine.trim());
   }
 
-  if (lines.length <= maxLines) {
+  return lines;
+}
+
+function wrapText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): WrappedQuote {
+  const normalizedBlocks = text
+    .trim()
+    .split(/\n+/)
+    .map((block) => block.trim().replace(/\s+/g, " "))
+    .filter((block) => block.length > 0);
+
+  if (normalizedBlocks.length === 0) {
     return {
-      lines,
-      truncated: false,
+      lines: [""],
     };
   }
 
-  const visibleLines = lines.slice(0, maxLines);
-  visibleLines[maxLines - 1] = fitLineWithEllipsis(
-    context,
-    visibleLines[maxLines - 1],
-    maxWidth,
-  );
+  const lines: string[] = [];
+
+  normalizedBlocks.forEach((block, blockIndex) => {
+    lines.push(...wrapSingleTextBlock(context, block, maxWidth));
+    if (blockIndex < normalizedBlocks.length - 1) {
+      lines.push("");
+    }
+  });
 
   return {
-    lines: visibleLines,
-    truncated: true,
+    lines,
   };
 }
 
@@ -353,15 +344,15 @@ export async function renderQuoteCoverBlob({
   let fontSize = Math.round(66 * scale);
   let wrappedQuote: WrappedQuote = {
     lines: [quotedText],
-    truncated: false,
   };
+  let lineHeight = fontSize * 1.18;
 
-  while (fontSize >= Math.round(32 * scale)) {
+  while (fontSize >= Math.round(14 * scale)) {
     context.font = `500 ${fontSize}px Georgia`;
-    wrappedQuote = wrapText(context, quotedText, quoteWidth, 3);
-    const lineHeight = fontSize * 1.22;
+    wrappedQuote = wrapText(context, quotedText, quoteWidth);
+    lineHeight = fontSize * (fontSize <= 24 * scale ? 1.14 : 1.18);
     const blockHeight = wrappedQuote.lines.length * lineHeight;
-    if (!wrappedQuote.truncated && blockHeight <= quoteHeight) {
+    if (blockHeight <= quoteHeight) {
       break;
     }
     fontSize -= Math.max(1, Math.round(2 * scale));
@@ -371,11 +362,11 @@ export async function renderQuoteCoverBlob({
   context.textAlign = "left";
   context.textBaseline = "top";
   context.font = `500 ${fontSize}px Georgia`;
-
-  const lineHeight = fontSize * 1.22;
+  const quoteBlockHeight = wrappedQuote.lines.length * lineHeight;
+  const quoteBlockTop = quoteTop + Math.max(0, (quoteHeight - quoteBlockHeight) / 2);
 
   wrappedQuote.lines.forEach((line, index) => {
-    context.fillText(line, quoteLeft, quoteTop + index * lineHeight);
+    context.fillText(line, quoteLeft, quoteBlockTop + index * lineHeight);
   });
 
   const coverX = quoteLeft;

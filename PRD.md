@@ -210,9 +210,11 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 **Acceptance criteria:**
 - ✓ Translation triggered via toolbar button "Translate Book" (globe icon); only available if LLM API key is configured in Settings
-- ✓ On click, a sheet/dialog appears: "Translate to:" [DROPDOWN: language list — English, Chinese (Simplified), Chinese (Traditional), Japanese, Korean, Spanish, French, German, Portuguese, Arabic, Russian], a "Start Translation" [BUTTON] and "Cancel" [BUTTON]
-- ✓ Translation is processed in paragraph units; each paragraph is sent to OpenRouter as an individual API call with context: "Translate the following text to {language}. Preserve the existing inline HTML formatting tags. Return only the translated HTML fragment, no explanation."
-- ✓ As each paragraph is translated, it is saved to the `translations` table in SQLite (keyed by `book_id + spine_item_href + paragraph_index + target_language`, with `paragraph_hash` stored for validation/retry) and immediately rendered in the reader
+- ✓ On click, a floating dropdown panel opens under the right toolbar utility cluster using the same visual style as the Contents and Annotations menus: rounded white/glass card, soft blur, subtle border, and a centered notch pointing back to the trigger cluster
+- ✓ The translation dropdown contains: title "Translate Book", helper copy "Original text remains visible alongside the translation. This may use API credits.", "Translate to:" [DROPDOWN: language list — English, Chinese (Simplified), Chinese (Traditional), Japanese, Korean, Spanish, French, German, Portuguese, Arabic, Russian], a "Start Translation" [BUTTON] and "Cancel" [BUTTON]
+- ✓ Translation remains paragraph-addressed for storage and rendering, but OpenRouter requests batch 10 to 20 consecutive paragraphs at a time (with the final tail batch allowed to be smaller)
+- ✓ Each OpenRouter batch request asks for a structured JSON array response of `{ paragraph_index, translated_html }` items, one item per input paragraph in the batch, preserving the original paragraph order and inline HTML formatting
+- ✓ As each translated paragraph from a validated batch response is accepted, it is saved to the `translations` table in SQLite (keyed by `book_id + spine_item_href + paragraph_index + target_language`, with `paragraph_hash` stored for validation/retry) and immediately rendered in the reader
 - ✓ In bilingual mode: each original paragraph is displayed, followed immediately by the translated paragraph in a slightly smaller font (16px vs 18px), same font family, color `#6e6e73` (Light/Sepia) or `#8e8e93` (Dark), separated by 4px margin
 - ✓ A progress banner fixed at top of reader shows: "Translating · {X} of {N} paragraphs complete · [BUTTON: Pause] [BUTTON: Cancel]"
 - ✓ User can read the book normally while translation is in progress; translated paragraphs display as they complete; untranslated paragraphs show only original text
@@ -242,7 +244,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 - ✓ Quote cover (1080×1080px output, previewed at 400×400px) contains:
   - Background: one of 5 preset color themes (user selects via color swatches in right panel): Warm (#f5f0e8 bg, #3b2f2f text), Midnight (#1c1c1e bg, #e5e5ea text), Ocean (#0a3d62 bg, #e8f4f8 text), Rose (#fff0f3 bg, #3d0014 text), Forest (#1a2e1a bg, #d4edda text)
   - Book cover image (if available): displayed as a rounded rectangle (80×110px) in the bottom-left corner, with a subtle drop shadow
-  - Selected quote text: centered in the cover, font Georgia, size auto-scaled to fit within 80% of cover width, maximum 3 lines; quotes wrapped in `"` `"` typographic quote characters
+  - Selected quote text: centered in the cover, font Georgia, wrapped in `"` `"` typographic quote characters, and auto-scaled/reflowed so the full selected paragraph is rendered on the cover without ellipsis or truncation
   - Book title: displayed below the quote text, small caps, 14px, 60% opacity
   - Author name: displayed below book title, italic, 12px, 50% opacity
   - Folio watermark: "Made with Folio" in bottom-right, 10px, 30% opacity
@@ -252,7 +254,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 - ✓ Live preview updates in real time as user edits the quote text or changes the theme
 
 **Edge cases:**
-- Selected text is longer than 280 characters → the Quote text textarea is pre-filled but a warning appears below it: "Long quotes may not display well. Consider shortening." (non-blocking, still allows saving)
+- Selected text is longer than 280 characters → the Quote text textarea is pre-filled and a helper note appears below it: "Long quotes will be scaled down to fit the cover." (non-blocking, still allows saving)
 - Book has no cover image → the cover area shows only the title initial letter on a colored square (same placeholder logic as library)
 - Canvas rendering fails (rare memory error) → alert: "Could not generate image. Please try again."
 
@@ -780,23 +782,22 @@ Left cluster:                           Right cluster:
 
 ---
 
-### Reader Window — Translation Language Sheet (modal)
+### Reader Window — Translation Language Menu (dropdown)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                        (reader content blurred behind)                          │
-│                                                                                 │
-│               ┌────────────────────────────────────────────────┐               │
-│               │  Translate Book                                 │               │
-│               │                                                 │               │
-│               │  Translate to:                                  │               │
-│               │  [DROPDOWN: Select language                 ▾]  │               │
-│               │                                                 │               │
-│               │  Original text remains visible alongside the   │               │
-│               │  translation. This may use API credits.        │               │
-│               │                                                 │               │
-│               │              [Cancel]  [Start Translation]      │               │
-│               └────────────────────────────────────────────────┘               │
+│ ● ● ●  [≡] [🔖] [🗒]         {Book Title}         [Aa] [🌐] [BI] [↓]          │
+│                                                       △                         │
+│     ┌──────────────────────────────────────────────────────────────┐            │
+│     │  Translate Book                                               │            │
+│     │  Original text remains visible alongside the translation.     │            │
+│     │  This may use API credits.                                    │            │
+│     ├──────────────────────────────────────────────────────────────┤            │
+│     │  Translate to                                                 │            │
+│     │  [DROPDOWN: Select language                              ▾]   │            │
+│     ├──────────────────────────────────────────────────────────────┤            │
+│     │                                   [Cancel] [Start Translation]│            │
+│     └──────────────────────────────────────────────────────────────┘            │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -829,7 +830,7 @@ Left cluster:                           Right cluster:
 
 ```
 │  [INPUT textarea: {long_quote_text…}               ]  │
-│  ⚠ Long quotes may not display well. Consider shortening. │
+│  ℹ Long quotes will be scaled down to fit the cover. │
 ```
 
 ---
@@ -1048,7 +1049,7 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 | Managed library file missing or corrupted | Book card shows gray overlay + ⚠ icon; double-click shows alert: "This book's managed library file is missing or corrupted. Re-import the book to read it again." |
 | Invalid ePub on import | Alert dialog: "'{filename}' could not be imported. The file may be corrupted or is not a valid ePub." |
 | DRM-protected ePub | Alert on open: "This book is DRM-protected and cannot be opened in Folio." |
-| LLM API error (single paragraph) | Paragraph skipped; warning banner with "Retry Failed" link |
+| LLM API error (single paragraph) | The worker isolates the failed paragraph out of its batch, skips that paragraph, and shows the warning banner with "Retry Failed" link |
 | LLM API auth error | Translation stops; alert: "Translation failed: Invalid API key. Please check your API key in Settings." |
 | LLM API rate limit | Translation auto-pauses; banner: "Translation paused (rate limit reached). Will retry in {N}s." with countdown; auto-resumes |
 | Network offline during translation | Translation auto-pauses; banner: "Translation paused (no internet connection)." Auto-resumes on reconnect |
@@ -1066,13 +1067,13 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 - Page navigation (next/previous page): < 100 ms
 - Text selection popup appearance after mouse release: < 50 ms
 - Library search filter response: < 150 ms (client-side, SQLite query)
-- Translation API calls: timeout after 30 seconds per paragraph; auto-retry once before marking as failed
+- Translation API calls: timeout after 30 seconds per chunked request; auto-retry once, then retry smaller chunks before marking any remaining paragraph as failed
 - Quote cover PNG generation (1080×1080): < 2 seconds
 
 ### 8.2 Security
 - API key stored in macOS Keychain only; never written to SQLite, log files, or environment variables
 - LLM API calls made from Rust backend (not renderer webview) to avoid exposing API key in devtools
-- No user data leaves the device except OpenRouter translation API calls (paragraph text sent to the configured OpenRouter model)
+- No user data leaves the device except OpenRouter translation API calls (paragraph text sent in chunked batches to the configured OpenRouter model)
 - OpenRouter-translated HTML is sanitized against a strict inline-tag allowlist before it is inserted into the reader DOM or exported
 - No telemetry, analytics, or crash reporting collected
 - ePub files stored in App Support directory with standard macOS file permissions (owner read/write only)
@@ -1126,9 +1127,9 @@ The following features will **not** be built:
 |---|---|---|
 | A1 | Each book's ePub file is **copied** into App Support on import (not linked) | Prevents broken references if user moves or deletes the source file |
 | A2 | Bilingual mode shows translated paragraph **immediately below** each original paragraph (not side by side) | Side-by-side requires horizontal layout that breaks most ePub formatting |
-| A3 | Translation uses **paragraph-level granularity** (not sentence-level, not chapter-level) | Balances API cost, context quality, and progressive display |
+| A3 | Translation storage and rendering use **paragraph-level granularity**, but LLM transport batches **10–20 consecutive paragraphs per request** | Preserves progressive paragraph-level display while reducing request volume and rate-limit exposure |
 | A4 | The "Translate" button in the selection popup bar is **not implemented in MVP** (only full-book translation exists); the button is present but shows a tooltip: "Select 'Translate Book' from the toolbar to translate the whole book" | The PRD describes full-book translation; single-paragraph inline translation is V2 |
-| A5 | LLM translation prompt does **not** include surrounding context from neighboring paragraphs | Simplifies implementation; paragraph context is usually sufficient |
+| A5 | LLM translation requests include the neighboring paragraphs already present in the same batch, but the model must return **one translated HTML fragment per paragraph** in a structured JSON array | Improves context quality without changing paragraph-level rendering or storage |
 | A6 | Quote cover dimensions are fixed at **1080×1080px** (square, Instagram-standard) | Most common share format; non-square is V2 |
 | A7 | The app has **no macOS menu bar items beyond standard** (Folio > About, Folio > Settings, Folio > Quit; standard Edit/View/Window/Help menus populated by Tauri defaults) | Keeps scope minimal |
 | A8 | "Export Bilingual ePub" generates the ePub **in-process** (Rust backend assembles epub zip) rather than calling an external tool | Avoids runtime dependency on external binaries |

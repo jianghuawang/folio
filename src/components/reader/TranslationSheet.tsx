@@ -1,20 +1,14 @@
-import { useEffect, useState } from "react";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ChevronDown, Loader2, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, Loader2 } from "lucide-react";
 
-import {
-  Dialog,
-  DialogClose,
-  DialogDescription,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { TranslationJob } from "@/types/translation";
 
 interface TranslationSheetProps {
+  anchorElement: HTMLElement | null;
   availableLanguages: readonly string[];
+  clusterElement: HTMLElement | null;
   currentLanguage: string | null;
   errorMessage?: string | null;
   job: TranslationJob | null;
@@ -24,8 +18,63 @@ interface TranslationSheetProps {
   pending: boolean;
 }
 
+const PANEL_MAX_WIDTH_PX = 420;
+const PANEL_VIEWPORT_PADDING_PX = 16;
+const PANEL_VERTICAL_OFFSET_PX = 18;
+const NOTCH_SIZE_PX = 24;
+const NOTCH_HORIZONTAL_PADDING_PX = 28;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function resolvePanelPosition({
+  anchorElement,
+  clusterElement,
+  viewportWidth,
+}: Pick<TranslationSheetProps, "anchorElement" | "clusterElement"> & {
+  viewportWidth: number;
+}) {
+  const panelWidth = Math.min(
+    PANEL_MAX_WIDTH_PX,
+    Math.max(320, viewportWidth - PANEL_VIEWPORT_PADDING_PX * 2),
+  );
+  const anchorRect = anchorElement?.getBoundingClientRect() ?? null;
+  const clusterRect = clusterElement?.getBoundingClientRect() ?? anchorRect;
+  const panelCenterX = clusterRect
+    ? clusterRect.left + clusterRect.width / 2
+    : anchorRect
+      ? anchorRect.left + anchorRect.width / 2
+      : viewportWidth - PANEL_VIEWPORT_PADDING_PX - panelWidth / 2;
+  const left = clamp(
+    panelCenterX - panelWidth / 2,
+    PANEL_VIEWPORT_PADDING_PX,
+    viewportWidth - PANEL_VIEWPORT_PADDING_PX - panelWidth,
+  );
+  const top = (clusterRect?.bottom ?? anchorRect?.bottom ?? 64) + PANEL_VERTICAL_OFFSET_PX;
+  const notchTargetX = anchorRect
+    ? anchorRect.left + anchorRect.width / 2
+    : clusterRect
+      ? clusterRect.left + clusterRect.width / 2
+      : panelCenterX;
+  const notchCenterX = clamp(
+    notchTargetX - left,
+    NOTCH_HORIZONTAL_PADDING_PX,
+    panelWidth - NOTCH_HORIZONTAL_PADDING_PX,
+  );
+
+  return {
+    left,
+    notchLeft: notchCenterX - NOTCH_SIZE_PX / 2,
+    top,
+    width: panelWidth,
+  };
+}
+
 export function TranslationSheet({
+  anchorElement,
   availableLanguages,
+  clusterElement,
   currentLanguage,
   errorMessage = null,
   job,
@@ -46,34 +95,94 @@ export function TranslationSheet({
     job.status === "complete" &&
     job.completed_paragraphs >= job.total_paragraphs;
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPortal>
-        <DialogOverlay className="bg-[rgba(24,24,27,0.18)] backdrop-blur-[10px]" />
+  const [panelPosition, setPanelPosition] = useState(() =>
+    resolvePanelPosition({
+      anchorElement: null,
+      clusterElement: null,
+      viewportWidth: typeof window === "undefined" ? 1440 : window.innerWidth,
+    }),
+  );
 
-        <DialogPrimitive.Content className="fixed left-[50%] top-[50%] z-50 w-[calc(100vw-2rem)] max-w-[760px] translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-[34px] border border-black/10 bg-white/84 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]">
+  useLayoutEffect(() => {
+    if (!open || typeof window === "undefined") {
+      return;
+    }
+
+    let animationFrameId = 0;
+
+    const updatePosition = () => {
+      setPanelPosition(
+        resolvePanelPosition({
+          anchorElement,
+          clusterElement,
+          viewportWidth: window.innerWidth,
+        }),
+      );
+    };
+
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(updatePosition);
+    };
+
+    updatePosition();
+    scheduleUpdate();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+
+    if (anchorElement) {
+      resizeObserver?.observe(anchorElement);
+    }
+
+    if (clusterElement && clusterElement !== anchorElement) {
+      resizeObserver?.observe(clusterElement);
+    }
+
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [anchorElement, clusterElement, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-40" onMouseDown={() => onOpenChange(false)}>
+      <div
+        className="absolute"
+        style={{
+          left: panelPosition.left,
+          top: panelPosition.top,
+          width: panelPosition.width,
+        }}
+      >
+        <div
+          className="pointer-events-auto relative w-full origin-top-right animate-in zoom-in-95 duration-[160ms] ease-out"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
           <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.72),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.55),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))]"
+            className="absolute top-0 h-6 w-6 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/88"
+            style={{ left: panelPosition.notchLeft }}
           />
 
-          <DialogClose className="absolute right-6 top-6 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/68 text-black/45 transition hover:bg-white hover:text-black/70 focus:outline-none focus:ring-2 focus:ring-black/10">
-            <X className="h-5 w-5" />
-            <span className="sr-only">Close</span>
-          </DialogClose>
-
-          <div className="relative">
-            <div className="border-b border-black/10 px-8 py-7 pr-20">
-              <DialogTitle className="text-[20px] font-semibold tracking-[-0.02em] text-black/70 sm:text-[22px]">
+          <div className="overflow-hidden rounded-[34px] border border-black/10 bg-white/92 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px]">
+            <div className="border-b border-black/10 px-6 py-5">
+              <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-black/70">
                 Translate Book
-              </DialogTitle>
-              <DialogDescription className="mt-2 max-w-[560px] text-sm leading-6 text-black/45 sm:text-[15px]">
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-black/45">
                 Original text remains visible alongside the translation. This may use
                 API credits.
-              </DialogDescription>
+              </p>
             </div>
 
-            <div className="space-y-5 px-8 py-6">
+            <div className="space-y-4 px-6 py-5">
               <div className="rounded-[28px] border border-black/10 bg-white/66 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
                 <label
                   className="text-sm font-medium text-black/50"
@@ -115,7 +224,7 @@ export function TranslationSheet({
               ) : null}
             </div>
 
-            <div className="flex flex-col-reverse gap-3 border-t border-black/10 px-8 py-5 sm:flex-row sm:justify-end">
+            <div className="flex flex-col-reverse gap-3 border-t border-black/10 px-6 py-4 sm:flex-row sm:justify-end">
               <Button
                 type="button"
                 variant="ghost"
@@ -140,8 +249,9 @@ export function TranslationSheet({
               </Button>
             </div>
           </div>
-        </DialogPrimitive.Content>
-      </DialogPortal>
-    </Dialog>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

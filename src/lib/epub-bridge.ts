@@ -108,7 +108,7 @@ const MIN_HORIZONTAL_DELTA = 8;
 const INITIAL_DISPLAY_TIMEOUT_MS = 4000;
 const BOOK_READY_TIMEOUT_MS = 4000;
 const SELECTION_SNAPSHOT_TTL_MS = 500;
-const NOTE_MARKER_SIZE_PX = 10;
+const NOTE_MARKER_SIZE_PX = 7;
 const NOTE_MARKER_LAYER_ATTRIBUTE = "data-folio-note-marker-layer";
 const NOTE_MARKER_ATTRIBUTE = "data-folio-note-marker";
 const NOTE_MARKER_DEFAULT_COLOR = "#FFD60A";
@@ -236,9 +236,12 @@ async function syncCurrentLocation(
 function createWheelNavigationHandler(rendition: Rendition) {
   let horizontalWheelDelta = 0;
   let wheelResetTimeout: number | null = null;
+  let swipeLocked = false;
+  const handledWheelEvents = new WeakSet<WheelEvent>();
 
   const reset = () => {
     horizontalWheelDelta = 0;
+    swipeLocked = false;
 
     if (wheelResetTimeout) {
       window.clearTimeout(wheelResetTimeout);
@@ -247,6 +250,12 @@ function createWheelNavigationHandler(rendition: Rendition) {
   };
 
   const handleWheel = (event: WheelEvent) => {
+    if (handledWheelEvents.has(event)) {
+      return;
+    }
+
+    handledWheelEvents.add(event);
+
     if (Math.abs(event.deltaX) < MIN_HORIZONTAL_DELTA) {
       return;
     }
@@ -264,11 +273,17 @@ function createWheelNavigationHandler(rendition: Rendition) {
 
     wheelResetTimeout = window.setTimeout(() => {
       reset();
-    }, 180);
+    }, 260);
+
+    if (swipeLocked) {
+      return;
+    }
 
     if (Math.abs(horizontalWheelDelta) < TRACKPAD_SWIPE_THRESHOLD) {
       return;
     }
+
+    swipeLocked = true;
 
     if (horizontalWheelDelta > 0) {
       void rendition.next();
@@ -276,7 +291,7 @@ function createWheelNavigationHandler(rendition: Rendition) {
       void rendition.prev();
     }
 
-    reset();
+    horizontalWheelDelta = 0;
   };
 
   return {
@@ -338,6 +353,15 @@ function registerReaderThemes(rendition: Rendition) {
         margin: "0",
         "overscroll-behavior": "none",
         padding: "0",
+      },
+      img: {
+        "max-width": "100% !important",
+      },
+      "a img, sup img, sub img, span img, em img, strong img, small img, .duokan-footnote img, .footnote img, .noteref img, .endnote img": {
+        "max-height": "1.5em !important",
+        "max-width": "1.5em !important",
+        "vertical-align": "middle !important",
+        "height": "auto !important",
       },
       p: {
         margin: "0 0 1em 0",
@@ -693,12 +717,23 @@ export async function createEpubBridge({
         return;
       }
 
+      const markerHost = contents.document.createElement("div");
+      markerHost.setAttribute(NOTE_MARKER_LAYER_ATTRIBUTE, "true");
+      markerHost.style.setProperty("all", "initial");
+      markerHost.style.position = "fixed";
+      markerHost.style.inset = "0";
+      markerHost.style.pointerEvents = "none";
+      markerHost.style.zIndex = "2147483647";
+
+      const markerShadowRoot = markerHost.attachShadow({ mode: "open" });
       const markerLayer = contents.document.createElement("div");
-      markerLayer.setAttribute(NOTE_MARKER_LAYER_ATTRIBUTE, "true");
+      markerLayer.style.setProperty("all", "initial");
       markerLayer.style.position = "fixed";
       markerLayer.style.inset = "0";
       markerLayer.style.pointerEvents = "none";
+      markerLayer.style.display = "block";
       markerLayer.style.zIndex = "2147483647";
+      markerShadowRoot.appendChild(markerLayer);
 
       currentNotes.forEach((note) => {
         try {
@@ -712,23 +747,30 @@ export async function createEpubBridge({
             return;
           }
 
-          const marker = contents.document.createElement("button");
-          marker.type = "button";
-          marker.setAttribute("aria-label", "Open note");
+          const marker = contents.document.createElement("div");
           marker.setAttribute(NOTE_MARKER_ATTRIBUTE, note.id);
+          marker.style.setProperty("all", "initial");
           marker.style.position = "absolute";
-          marker.style.left = `${Math.max(0, rect.right - NOTE_MARKER_SIZE_PX)}px`;
-          marker.style.top = `${Math.max(0, rect.bottom - NOTE_MARKER_SIZE_PX / 2)}px`;
+          marker.style.left = `${Math.max(0, rect.right - NOTE_MARKER_SIZE_PX * 0.35)}px`;
+          marker.style.top = `${Math.max(0, rect.bottom - NOTE_MARKER_SIZE_PX * 0.85)}px`;
+          marker.style.display = "block";
           marker.style.width = `${NOTE_MARKER_SIZE_PX}px`;
           marker.style.height = `${NOTE_MARKER_SIZE_PX}px`;
+          marker.style.minWidth = "0";
+          marker.style.minHeight = "0";
           marker.style.padding = "0";
           marker.style.margin = "0";
+          marker.style.boxSizing = "border-box";
           marker.style.borderRadius = "999px";
-          marker.style.border = `1.5px solid ${THEME_STYLES[currentReadingSettings.theme].background}`;
+          marker.style.border = `1px solid ${THEME_STYLES[currentReadingSettings.theme].background}`;
           marker.style.background = highlightById.get(note.highlight_id ?? "")?.color ?? NOTE_MARKER_DEFAULT_COLOR;
-          marker.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.18)";
+          marker.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.14)";
           marker.style.cursor = "pointer";
           marker.style.pointerEvents = "auto";
+          marker.style.overflow = "hidden";
+          marker.style.userSelect = "none";
+          marker.style.setProperty("-webkit-appearance", "none");
+          marker.style.setProperty("appearance", "none");
 
           const handleNotePointerEvent = (event: Event) => {
             stopEvent(event);
@@ -753,7 +795,7 @@ export async function createEpubBridge({
       });
 
       if (markerLayer.childElementCount > 0) {
-        contents.document.body.appendChild(markerLayer);
+        contents.document.body.appendChild(markerHost);
       }
     });
 

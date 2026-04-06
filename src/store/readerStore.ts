@@ -85,6 +85,7 @@ interface ReaderStore {
   setSelection: (selection: ReaderSelectionState | null) => void;
   toggleAnnotations: (tab?: ReaderAnnotationsTab) => void;
   toggleToc: () => void;
+  toggleTranslationSheet: () => void;
 }
 
 export const useReaderStore = create<ReaderStore>((set) => ({
@@ -116,6 +117,7 @@ export const useReaderStore = create<ReaderStore>((set) => ({
       annotationsOpen: true,
       annotationsTab: tab,
       tocOpen: false,
+      translationSheetOpen: false,
     }),
   openNoteEditor: (state) =>
     set({
@@ -135,8 +137,14 @@ export const useReaderStore = create<ReaderStore>((set) => ({
     set({
       annotationsOpen: false,
       tocOpen: true,
+      translationSheetOpen: false,
     }),
-  openTranslationSheet: () => set({ translationSheetOpen: true }),
+  openTranslationSheet: () =>
+    set({
+      annotationsOpen: false,
+      tocOpen: false,
+      translationSheetOpen: true,
+    }),
   requestNavigation: (cfi) => set({ pendingNavigationCfi: cfi }),
   resetReaderState: () =>
     set({
@@ -175,10 +183,18 @@ export const useReaderStore = create<ReaderStore>((set) => ({
         state.annotationsOpen && state.annotationsTab === tab ? !state.annotationsOpen : true,
       annotationsTab: tab,
       tocOpen: false,
+      translationSheetOpen: false,
     })),
   toggleToc: () =>
     set((state) => ({
       annotationsOpen: false,
       tocOpen: !state.tocOpen,
+      translationSheetOpen: false,
+    })),
+  toggleTranslationSheet: () =>
+    set((state) => ({
+      annotationsOpen: false,
+      tocOpen: false,
+      translationSheetOpen: !state.translationSheetOpen,
     })),
 }));

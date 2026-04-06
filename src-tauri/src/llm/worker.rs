@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs::File,
     io::Read,
     path::{Component, Path, PathBuf},
@@ -21,7 +21,9 @@ use zip::ZipArchive;
 use crate::{
     db::AppState,
     llm::{
-        client::{LlmClient, TranslateParagraphError},
+        client::{
+            LlmClient, TranslateParagraphError, TranslatedChunkParagraph, TranslationChunkParagraph,
+        },
         generate_uuid_v4, now_unix_timestamp, serialize_paragraph_locators, ParagraphLocator,
         TranslationCompleteEvent, TranslationErrorEvent, TranslationJob, TranslationJobStatus,
         TranslationPauseReason, TranslationPausedEvent, TranslationProgressEvent,
@@ -31,6 +33,8 @@ use crate::{
 const CONTAINER_PATH: &str = "META-INF/container.xml";
 const PACKAGE_NS: &str = "http://www.idpf.org/2007/opf";
 const NETWORK_RETRY_DELAY_SECS: u64 = 5;
+const CHUNK_RETRY_DELAY_SECS: u64 = 1;
+const REQUEST_CHUNK_SIZE: usize = 10;
 
 #[derive(Clone)]
 struct JobControl {
@@ -49,6 +53,12 @@ struct ParagraphWorkItem {
     locator: ParagraphLocator,
     original_html: String,
     paragraph_hash: String,
+}
+
+#[derive(Debug, Clone)]
+struct JobRuntimeState {
+    completed_paragraphs: i64,
+    failed_locators: HashSet<ParagraphLocator>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,10 +145,13 @@ async fn run_translation_worker(
     mode: WorkerMode,
 ) -> Result<(), String> {
     let client = LlmClient::new(api_key)?;
-    let mut completed_paragraphs = job.completed_paragraphs;
     let all_work_items = load_paragraph_work_items(&book_file_path)?;
     let existing_locators =
         load_existing_translation_locators(&app_handle, &job.book_id, &job.target_language)?;
+    let mut runtime_state = JobRuntimeState {
+        completed_paragraphs: job.completed_paragraphs.max(existing_locators.len() as i64),
+        failed_locators: job.failed_paragraph_locators.iter().cloned().collect(),
+    };
 
     let selected_locators = match mode {
         WorkerMode::PendingMissing => None,
@@ -156,7 +169,9 @@ async fn run_translation_worker(
         })
         .collect::<Vec<_>>();
 
-    for work_item in pending_work_items {
+    let mut chunk_queue = build_translation_chunks(pending_work_items);
+
+    while let Some(chunk) = chunk_queue.pop_front() {
         if control.cancel.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -173,144 +188,83 @@ async fn run_translation_worker(
                 return Ok(());
             }
 
+            let chunk_request = chunk
+                .iter()
+                .map(|work_item| TranslationChunkParagraph {
+                    paragraph_index: work_item.locator.paragraph_index,
+                    original_html: &work_item.original_html,
+                })
+                .collect::<Vec<_>>();
+
             match client
-                .translate_paragraph(&work_item.original_html, &job.target_language, &model)
+                .translate_chunk(&chunk_request, &job.target_language, &model)
                 .await
             {
-                Ok(translated_html) => {
-                    let inserted = persist_translation(
+                Ok(translated_chunk) => {
+                    persist_translated_chunk(
                         &app_handle,
-                        &job.book_id,
-                        &job.target_language,
-                        &work_item,
-                        &translated_html,
+                        &job,
+                        &chunk,
+                        &translated_chunk,
+                        &mut runtime_state,
                     )?;
-                    if inserted {
-                        completed_paragraphs += 1;
-                        update_completed_paragraphs(&app_handle, &job.id, completed_paragraphs)?;
-                    } else {
-                        let persisted_count = count_persisted_translations(
-                            &app_handle,
-                            &job.book_id,
-                            &job.target_language,
-                        )?;
-                        if persisted_count > completed_paragraphs {
-                            completed_paragraphs = persisted_count;
-                            update_completed_paragraphs(
-                                &app_handle,
-                                &job.id,
-                                completed_paragraphs,
-                            )?;
-                        }
-                    }
-                    remove_failed_locator(&app_handle, &job.id, &work_item.locator)?;
-                    app_handle
-                        .emit(
-                            "translation:progress",
-                            TranslationProgressEvent {
-                                job_id: job.id.clone(),
-                                completed: completed_paragraphs,
-                                total: job.total_paragraphs,
-                                latest_spine_item_href: work_item.locator.spine_item_href.clone(),
-                                latest_paragraph_index: work_item.locator.paragraph_index,
-                            },
-                        )
-                        .map_err(|error| error.to_string())?;
                     break;
                 }
                 Err(TranslateParagraphError::RateLimited { retry_after_secs }) => {
-                    update_job_status(
+                    if wait_for_retry_window(
                         &app_handle,
-                        &job.id,
-                        TranslationJobStatus::Paused,
-                        Some(TranslationPauseReason::RateLimit),
-                    )?;
-                    app_handle
-                        .emit(
-                            "translation:paused",
-                            TranslationPausedEvent {
-                                job_id: job.id.clone(),
-                                reason: TranslationPauseReason::RateLimit,
-                                retry_after_secs: Some(retry_after_secs),
-                            },
-                        )
-                        .map_err(|error| error.to_string())?;
-                    sleep(Duration::from_secs(retry_after_secs)).await;
-                    wait_while_paused(&control).await;
-                    if control.cancel.load(Ordering::SeqCst) {
+                        &control,
+                        &job,
+                        TranslationPauseReason::RateLimit,
+                        Some(retry_after_secs),
+                    )
+                    .await?
+                    {
                         return Ok(());
                     }
-                    update_job_status(
-                        &app_handle,
-                        &job.id,
-                        TranslationJobStatus::InProgress,
-                        None,
-                    )?;
                 }
                 Err(TranslateParagraphError::Network(_)) => {
-                    update_job_status(
+                    if wait_for_retry_window(
                         &app_handle,
-                        &job.id,
-                        TranslationJobStatus::Paused,
-                        Some(TranslationPauseReason::Network),
-                    )?;
-                    app_handle
-                        .emit(
-                            "translation:paused",
-                            TranslationPausedEvent {
-                                job_id: job.id.clone(),
-                                reason: TranslationPauseReason::Network,
-                                retry_after_secs: None,
-                            },
-                        )
-                        .map_err(|error| error.to_string())?;
-                    sleep(Duration::from_secs(NETWORK_RETRY_DELAY_SECS)).await;
-                    wait_while_paused(&control).await;
-                    if control.cancel.load(Ordering::SeqCst) {
+                        &control,
+                        &job,
+                        TranslationPauseReason::Network,
+                        None,
+                    )
+                    .await?
+                    {
                         return Ok(());
                     }
-                    update_job_status(
-                        &app_handle,
-                        &job.id,
-                        TranslationJobStatus::InProgress,
-                        None,
-                    )?;
                 }
                 Err(TranslateParagraphError::Auth) => {
-                    append_failed_locator(&app_handle, &job.id, &work_item.locator)?;
-                    app_handle
-                        .emit(
-                            "translation:error",
-                            TranslationErrorEvent {
-                                job_id: job.id.clone(),
-                                spine_item_href: work_item.locator.spine_item_href.clone(),
-                                paragraph_index: work_item.locator.paragraph_index,
-                                error_message: "Invalid API key.".to_string(),
-                            },
-                        )
-                        .map_err(|error| error.to_string())?;
-                    mark_job_failed(&app_handle, &job.id)?;
+                    mark_auth_failure(
+                        &app_handle,
+                        &job,
+                        &chunk,
+                        &mut runtime_state,
+                        "Invalid API key.",
+                    )?;
                     return Ok(());
                 }
                 Err(error) => {
                     if attempts == 0 {
                         attempts += 1;
-                        sleep(Duration::from_secs(1)).await;
+                        sleep(Duration::from_secs(CHUNK_RETRY_DELAY_SECS)).await;
                         continue;
                     }
 
-                    append_failed_locator(&app_handle, &job.id, &work_item.locator)?;
-                    app_handle
-                        .emit(
-                            "translation:error",
-                            TranslationErrorEvent {
-                                job_id: job.id.clone(),
-                                spine_item_href: work_item.locator.spine_item_href.clone(),
-                                paragraph_index: work_item.locator.paragraph_index,
-                                error_message: error.to_string(),
-                            },
-                        )
-                        .map_err(|event_error| event_error.to_string())?;
+                    if chunk.len() > 1 {
+                        enqueue_split_chunks(&mut chunk_queue, &chunk);
+                    } else if let Some(work_item) = chunk.first() {
+                        mark_paragraph_failed(
+                            &app_handle,
+                            &job,
+                            &mut runtime_state,
+                            work_item,
+                            error.to_string(),
+                        )?;
+                    }
+
                     break;
                 }
             }
@@ -332,6 +286,201 @@ async fn run_translation_worker(
         .map_err(|error| error.to_string())?;
 
     Ok(())
+}
+
+fn build_translation_chunks(
+    pending_work_items: Vec<ParagraphWorkItem>,
+) -> VecDeque<Vec<ParagraphWorkItem>> {
+    let mut chunk_queue = VecDeque::new();
+    let mut current_run = Vec::new();
+
+    for work_item in pending_work_items {
+        let continues_run = current_run
+            .last()
+            .map_or(true, |previous: &ParagraphWorkItem| {
+                previous.locator.spine_item_href == work_item.locator.spine_item_href
+                    && previous.locator.paragraph_index + 1 == work_item.locator.paragraph_index
+            });
+
+        if !continues_run {
+            push_run_chunks(&mut chunk_queue, current_run);
+            current_run = Vec::new();
+        }
+
+        current_run.push(work_item);
+    }
+
+    push_run_chunks(&mut chunk_queue, current_run);
+    chunk_queue
+}
+
+fn push_run_chunks(
+    chunk_queue: &mut VecDeque<Vec<ParagraphWorkItem>>,
+    run: Vec<ParagraphWorkItem>,
+) {
+    if run.is_empty() {
+        return;
+    }
+
+    for chunk in run.chunks(REQUEST_CHUNK_SIZE) {
+        chunk_queue.push_back(chunk.to_vec());
+    }
+}
+
+fn enqueue_split_chunks(
+    chunk_queue: &mut VecDeque<Vec<ParagraphWorkItem>>,
+    chunk: &[ParagraphWorkItem],
+) {
+    let split_index = chunk.len() / 2;
+    if split_index == 0 || split_index >= chunk.len() {
+        return;
+    }
+
+    chunk_queue.push_front(chunk[split_index..].to_vec());
+    chunk_queue.push_front(chunk[..split_index].to_vec());
+}
+
+async fn wait_for_retry_window(
+    app_handle: &AppHandle,
+    control: &JobControl,
+    job: &TranslationJob,
+    pause_reason: TranslationPauseReason,
+    retry_after_secs: Option<u64>,
+) -> Result<bool, String> {
+    update_job_status(
+        app_handle,
+        &job.id,
+        TranslationJobStatus::Paused,
+        Some(pause_reason),
+    )?;
+    app_handle
+        .emit(
+            "translation:paused",
+            TranslationPausedEvent {
+                job_id: job.id.clone(),
+                reason: pause_reason,
+                retry_after_secs,
+            },
+        )
+        .map_err(|error| error.to_string())?;
+
+    let sleep_secs = retry_after_secs.unwrap_or(NETWORK_RETRY_DELAY_SECS);
+    sleep(Duration::from_secs(sleep_secs)).await;
+    wait_while_paused(control).await;
+
+    if control.cancel.load(Ordering::SeqCst) {
+        return Ok(true);
+    }
+
+    update_job_status(app_handle, &job.id, TranslationJobStatus::InProgress, None)?;
+    Ok(false)
+}
+
+fn persist_translated_chunk(
+    app_handle: &AppHandle,
+    job: &TranslationJob,
+    work_items: &[ParagraphWorkItem],
+    translated_chunk: &[TranslatedChunkParagraph],
+    runtime_state: &mut JobRuntimeState,
+) -> Result<(), String> {
+    if work_items.len() != translated_chunk.len() {
+        return Err("Chunk persistence length mismatch.".to_string());
+    }
+
+    for (work_item, translated_paragraph) in work_items.iter().zip(translated_chunk.iter()) {
+        if work_item.locator.paragraph_index != translated_paragraph.paragraph_index {
+            return Err(format!(
+                "Chunk persistence order mismatch for paragraph {}.",
+                work_item.locator.paragraph_index
+            ));
+        }
+
+        let inserted = persist_translation(
+            app_handle,
+            &job.book_id,
+            &job.target_language,
+            work_item,
+            &translated_paragraph.translated_html,
+        )?;
+
+        if inserted {
+            runtime_state.completed_paragraphs += 1;
+        } else {
+            let persisted_count =
+                count_persisted_translations(app_handle, &job.book_id, &job.target_language)?;
+            runtime_state.completed_paragraphs =
+                runtime_state.completed_paragraphs.max(persisted_count);
+        }
+
+        runtime_state.failed_locators.remove(&work_item.locator);
+        persist_job_runtime_state(app_handle, &job.id, runtime_state)?;
+        app_handle
+            .emit(
+                "translation:progress",
+                TranslationProgressEvent {
+                    job_id: job.id.clone(),
+                    completed: runtime_state.completed_paragraphs,
+                    total: job.total_paragraphs,
+                    latest_spine_item_href: work_item.locator.spine_item_href.clone(),
+                    latest_paragraph_index: work_item.locator.paragraph_index,
+                },
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn mark_paragraph_failed(
+    app_handle: &AppHandle,
+    job: &TranslationJob,
+    runtime_state: &mut JobRuntimeState,
+    work_item: &ParagraphWorkItem,
+    error_message: String,
+) -> Result<(), String> {
+    runtime_state
+        .failed_locators
+        .insert(work_item.locator.clone());
+    persist_job_runtime_state(app_handle, &job.id, runtime_state)?;
+    app_handle
+        .emit(
+            "translation:error",
+            TranslationErrorEvent {
+                job_id: job.id.clone(),
+                spine_item_href: work_item.locator.spine_item_href.clone(),
+                paragraph_index: work_item.locator.paragraph_index,
+                error_message,
+            },
+        )
+        .map_err(|event_error| event_error.to_string())
+}
+
+fn mark_auth_failure(
+    app_handle: &AppHandle,
+    job: &TranslationJob,
+    chunk: &[ParagraphWorkItem],
+    runtime_state: &mut JobRuntimeState,
+    error_message: &str,
+) -> Result<(), String> {
+    if let Some(work_item) = chunk.first() {
+        runtime_state
+            .failed_locators
+            .insert(work_item.locator.clone());
+        persist_job_runtime_state(app_handle, &job.id, runtime_state)?;
+        app_handle
+            .emit(
+                "translation:error",
+                TranslationErrorEvent {
+                    job_id: job.id.clone(),
+                    spine_item_href: work_item.locator.spine_item_href.clone(),
+                    paragraph_index: work_item.locator.paragraph_index,
+                    error_message: error_message.to_string(),
+                },
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    mark_job_failed(app_handle, &job.id)
 }
 
 async fn wait_while_paused(control: &JobControl) {
@@ -485,19 +634,31 @@ fn load_existing_translation_locators(
     })
 }
 
-fn update_completed_paragraphs(
+fn persist_job_runtime_state(
     app_handle: &AppHandle,
     job_id: &str,
-    completed_paragraphs: i64,
+    runtime_state: &JobRuntimeState,
 ) -> Result<(), String> {
     with_connection(app_handle, |connection| {
         connection
             .execute(
                 "UPDATE translation_jobs
                  SET completed_paragraphs = ?2,
-                     updated_at = ?3
+                     failed_paragraph_locators = ?3,
+                     updated_at = ?4
                  WHERE id = ?1",
-                params![job_id, completed_paragraphs, now_unix_timestamp()],
+                params![
+                    job_id,
+                    runtime_state.completed_paragraphs,
+                    serialize_paragraph_locators(
+                        &runtime_state
+                            .failed_locators
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                    )?,
+                    now_unix_timestamp(),
+                ],
             )
             .map_err(|error| error.to_string())?;
         Ok(())
@@ -532,67 +693,6 @@ fn update_job_status(
 
 fn mark_job_failed(app_handle: &AppHandle, job_id: &str) -> Result<(), String> {
     update_job_status(app_handle, job_id, TranslationJobStatus::Failed, None)
-}
-
-fn append_failed_locator(
-    app_handle: &AppHandle,
-    job_id: &str,
-    locator: &ParagraphLocator,
-) -> Result<(), String> {
-    let mut failed_locators = load_failed_locators(app_handle, job_id)?;
-    if !failed_locators.contains(locator) {
-        failed_locators.push(locator.clone());
-    }
-    store_failed_locators(app_handle, job_id, &failed_locators)
-}
-
-fn remove_failed_locator(
-    app_handle: &AppHandle,
-    job_id: &str,
-    locator: &ParagraphLocator,
-) -> Result<(), String> {
-    let mut failed_locators = load_failed_locators(app_handle, job_id)?;
-    failed_locators.retain(|current| current != locator);
-    store_failed_locators(app_handle, job_id, &failed_locators)
-}
-
-fn load_failed_locators(
-    app_handle: &AppHandle,
-    job_id: &str,
-) -> Result<Vec<ParagraphLocator>, String> {
-    with_connection(app_handle, |connection| {
-        let raw_value = connection
-            .query_row(
-                "SELECT failed_paragraph_locators FROM translation_jobs WHERE id = ?1",
-                params![job_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
-
-        serde_json::from_str::<Vec<ParagraphLocator>>(&raw_value).map_err(|error| error.to_string())
-    })
-}
-
-fn store_failed_locators(
-    app_handle: &AppHandle,
-    job_id: &str,
-    locators: &[ParagraphLocator],
-) -> Result<(), String> {
-    let serialized = serialize_paragraph_locators(locators)?;
-    with_connection(app_handle, |connection| {
-        connection
-            .execute(
-                "UPDATE translation_jobs
-                 SET failed_paragraph_locators = ?2,
-                     updated_at = ?3
-                 WHERE id = ?1",
-                params![job_id, serialized, now_unix_timestamp()],
-            )
-            .map_err(|error| error.to_string())?;
-        Ok(())
-    })
 }
 
 fn with_connection<T>(
