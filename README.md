@@ -2,6 +2,10 @@
 
 A native macOS ePub reader with AI-powered bilingual translation, rich annotations, and quote-cover generation.
 
+## Screenshot
+
+![Folio Reader](.github/assets/Folio_Reader.png)
+
 ## Features
 
 ### Library & Bookshelf
