@@ -15,6 +15,8 @@ A native macOS ePub reader with AI-powered bilingual translation, rich annotatio
 - Filter to recently read books from the sidebar
 - Right-click to open, view info, or remove books from your library
 
+![Folio Bookshelf](.github/assets/Folio_bookshelf.png)
+
 ### Reading Experience
 - Clean, paginated ePub rendering with a macOS Books-style aesthetic
 - Three themes: Light, Sepia, and Dark
@@ -39,12 +41,16 @@ A native macOS ePub reader with AI-powered bilingual translation, rich annotatio
 - Toggle bilingual mode on and off
 - Export a completed bilingual translation as a new ePub file
 
+![Folio Bilingual Mode](.github/assets/Folio_Bilingual_Mode.png)
+
 ### Quote Cover Generator
 - Select a passage and generate a beautiful 1080x1080 quote cover image
 - Choose from five color themes
 - Edit the quote text with live preview
 - Includes book cover, title, author, and a subtle watermark
 - Save as PNG to your Desktop
+
+![Folio Quote Cover Generator](.github/assets/Folio_Quote_Cover_Generator.png)
 
 ### Settings
 - Configure your OpenRouter API key (stored securely in macOS Keychain)
