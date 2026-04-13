@@ -137,7 +137,25 @@ pub struct TranslationPausedEvent {
     pub retry_after_secs: Option<u64>,
 }
 
+pub fn repair_common_mojibake(text: &str) -> String {
+    if !looks_like_common_mojibake(text) {
+        return text.to_string();
+    }
+
+    let Some(repaired_text) = decode_windows_1252_as_utf8(text) else {
+        return text.to_string();
+    };
+
+    if mojibake_score(&repaired_text) < mojibake_score(text) {
+        repaired_text
+    } else {
+        text.to_string()
+    }
+}
+
 pub fn translation_from_row(row: &Row<'_>) -> rusqlite::Result<Translation> {
+    let translated_html = row.get::<_, String>("translated_html")?;
+
     Ok(Translation {
         id: row.get("id")?,
         book_id: row.get("book_id")?,
@@ -145,7 +163,7 @@ pub fn translation_from_row(row: &Row<'_>) -> rusqlite::Result<Translation> {
         paragraph_index: row.get("paragraph_index")?,
         paragraph_hash: row.get("paragraph_hash")?,
         original_html: row.get("original_html")?,
-        translated_html: row.get("translated_html")?,
+        translated_html: repair_common_mojibake(&translated_html),
         target_language: row.get("target_language")?,
         created_at: row.get("created_at")?,
     })
@@ -233,4 +251,91 @@ pub fn now_unix_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or_default()
+}
+
+fn decode_windows_1252_as_utf8(text: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(text.len());
+
+    for character in text.chars() {
+        bytes.push(windows_1252_byte_from_char(character)?);
+    }
+
+    String::from_utf8(bytes).ok()
+}
+
+fn windows_1252_byte_from_char(character: char) -> Option<u8> {
+    match character {
+        '\u{0000}'..='\u{00FF}' => Some(character as u8),
+        '\u{20AC}' => Some(0x80),
+        '\u{201A}' => Some(0x82),
+        '\u{0192}' => Some(0x83),
+        '\u{201E}' => Some(0x84),
+        '\u{2026}' => Some(0x85),
+        '\u{2020}' => Some(0x86),
+        '\u{2021}' => Some(0x87),
+        '\u{02C6}' => Some(0x88),
+        '\u{2030}' => Some(0x89),
+        '\u{0160}' => Some(0x8A),
+        '\u{2039}' => Some(0x8B),
+        '\u{0152}' => Some(0x8C),
+        '\u{017D}' => Some(0x8E),
+        '\u{2018}' => Some(0x91),
+        '\u{2019}' => Some(0x92),
+        '\u{201C}' => Some(0x93),
+        '\u{201D}' => Some(0x94),
+        '\u{2022}' => Some(0x95),
+        '\u{2013}' => Some(0x96),
+        '\u{2014}' => Some(0x97),
+        '\u{02DC}' => Some(0x98),
+        '\u{2122}' => Some(0x99),
+        '\u{0161}' => Some(0x9A),
+        '\u{203A}' => Some(0x9B),
+        '\u{0153}' => Some(0x9C),
+        '\u{017E}' => Some(0x9E),
+        '\u{0178}' => Some(0x9F),
+        _ => None,
+    }
+}
+
+fn looks_like_common_mojibake(text: &str) -> bool {
+    text.chars().any(|character| {
+        matches!(
+            character,
+            'â' | 'Ã' | '€' | 'œ' | 'Ÿ' | 'ž' | '™' | '\u{FFFD}'
+        ) || ('\u{0080}'..='\u{009F}').contains(&character)
+    })
+}
+
+fn mojibake_score(text: &str) -> usize {
+    text.chars()
+        .filter(|character| {
+            matches!(
+                character,
+                'â' | 'Ã' | '€' | 'œ' | 'Ÿ' | 'ž' | '™' | '\u{FFFD}'
+            ) || ('\u{0080}'..='\u{009F}').contains(character)
+        })
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repair_common_mojibake;
+
+    #[test]
+    fn repairs_common_windows_1252_mojibake_sequences() {
+        let input =
+            "â\u{0080}\u{009c}Oh, Govinda!â\u{0080}\u{009d} he said softlyâ\u{0080}\u{0094}soon.";
+
+        assert_eq!(
+            repair_common_mojibake(input),
+            "“Oh, Govinda!” he said softly—soon."
+        );
+    }
+
+    #[test]
+    fn leaves_clean_text_unchanged() {
+        let input = "Dedicated to my beloved friend Romain Rolland";
+
+        assert_eq!(repair_common_mojibake(input), input);
+    }
 }

@@ -14,6 +14,9 @@ interface TranslationBannerProps {
   statusMessage: string | null;
 }
 
+const bannerFrameClassName =
+  "flex h-[52px] w-full max-w-[920px] items-center justify-between rounded-full border border-black/5 bg-white/92 px-5 text-sm text-black shadow-[0_18px_48px_rgba(0,0,0,0.14)] backdrop-blur-[20px]";
+
 export function TranslationBanner({
   bookTitle,
   exportProgress,
@@ -30,8 +33,8 @@ export function TranslationBanner({
 
   if (exportProgress !== null) {
     return (
-      <div className="absolute inset-x-0 top-0 z-30 flex justify-center px-6 pt-3">
-        <div className="flex min-h-12 w-full max-w-[920px] items-center justify-between rounded-2xl border border-black/5 bg-white/96 px-4 py-2 text-sm text-black shadow-[0_12px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-6 pt-5">
+        <div className={`${bannerFrameClassName} pointer-events-auto`}>
           <span>Generating bilingual ePub… {Math.round(exportProgress)}%</span>
           <Loader2 className="h-4 w-4 animate-spin" />
         </div>
@@ -39,7 +42,7 @@ export function TranslationBanner({
     );
   }
 
-  if (!job || !statusMessage) {
+  if (!job || !statusMessage || (job.status !== "in_progress" && job.status !== "paused")) {
     return null;
   }
 
@@ -48,8 +51,8 @@ export function TranslationBanner({
   const isPaused = job.status === "paused";
 
   return (
-    <div className="absolute inset-x-0 top-0 z-30 flex justify-center px-6 pt-3">
-      <div className="flex min-h-12 w-full max-w-[920px] items-center justify-between gap-4 rounded-2xl border border-black/5 bg-white/96 px-4 py-2 text-sm text-black shadow-[0_12px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl">
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-6 pt-5">
+      <div className={`${bannerFrameClassName} pointer-events-auto gap-4`}>
         <div className="flex min-w-0 items-center gap-2">
           {failedCount > 0 ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : null}
           <span className="truncate">
@@ -127,4 +130,3 @@ export function TranslationBanner({
     </div>
   );
 }
-

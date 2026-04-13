@@ -11,7 +11,7 @@ use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::llm::DEFAULT_LLM_MODEL;
+use crate::llm::{repair_common_mojibake, DEFAULT_LLM_MODEL};
 
 const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 const HTTP_REFERER: &str = "https://folio.app";
@@ -438,6 +438,7 @@ fn normalize_translated_fragment(fragment: &str) -> String {
     normalized = strip_code_fences(&normalized);
     normalized = strip_xml_declaration(&normalized);
     normalized = replace_html_entities(&normalized);
+    normalized = repair_common_mojibake(&normalized);
     normalized = normalize_void_tags(&normalized);
 
     loop {

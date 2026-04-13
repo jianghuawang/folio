@@ -166,11 +166,47 @@ function flattenTocItems(items: NavItem[], depth = 0): ReaderTocItem[] {
 }
 
 function normalizeHref(href: string) {
-  return href.split("#")[0] ?? href;
+  return href.split("#")[0]?.split("?")[0] ?? href;
 }
 
 function getTranslationKey(spineItemHref: string, paragraphIndex: number) {
   return `${normalizeHref(spineItemHref)}::${paragraphIndex}`;
+}
+
+function normalizeHrefCandidate(href: string) {
+  const trimmedHref = href.trim();
+  if (!trimmedHref) {
+    return "";
+  }
+
+  try {
+    return normalizeHref(decodeURIComponent(new URL(trimmedHref).pathname)).replace(/^\/+/, "");
+  } catch {
+    try {
+      return normalizeHref(decodeURIComponent(trimmedHref)).replace(/^\/+/, "");
+    } catch {
+      return normalizeHref(trimmedHref).replace(/^\/+/, "");
+    }
+  }
+}
+
+function resolveKnownSpineHref(candidateHref: string, spineHrefs: readonly string[]) {
+  const normalizedCandidate = normalizeHrefCandidate(candidateHref);
+  if (!normalizedCandidate) {
+    return null;
+  }
+
+  for (const spineHref of spineHrefs) {
+    if (
+      normalizedCandidate === spineHref ||
+      normalizedCandidate.endsWith(`/${spineHref}`) ||
+      normalizedCandidate.endsWith(`/OEBPS/${spineHref}`)
+    ) {
+      return spineHref;
+    }
+  }
+
+  return null;
 }
 
 function isCoverLikeHref(href: string) {
@@ -443,10 +479,25 @@ async function awaitWithTimeout<T>(
   }
 }
 
-function getContentsSectionHref(contents: Contents) {
-  return normalizeHref(
-    ((contents as unknown as { section?: { href?: string } }).section?.href ?? "").trim(),
-  );
+function getContentsSectionHref(
+  contents: Contents,
+  spineHrefByIndex: ReadonlyMap<number, string>,
+  knownSpineHrefs: readonly string[],
+) {
+  const sectionIndex = (contents as unknown as { sectionIndex?: number }).sectionIndex;
+  if (typeof sectionIndex === "number") {
+    const indexedHref = spineHrefByIndex.get(sectionIndex);
+    if (indexedHref) {
+      return indexedHref;
+    }
+  }
+
+  const canonicalHref =
+    contents.document.querySelector("link[rel='canonical']")?.getAttribute("href") ??
+    contents.document.location?.href ??
+    "";
+
+  return resolveKnownSpineHref(canonicalHref, knownSpineHrefs) ?? "";
 }
 
 function clearInjectedTranslations(contents: Contents) {
@@ -588,6 +639,7 @@ export async function createEpubBridge({
   let bilingualModeEnabled = false;
   let initialDisplayComplete = false;
   let suppressSelectionClearUntil = 0;
+  const spineHrefByIndex = new Map<number, string>();
 
   registerReaderThemes(rendition);
   applyReadingSettingsToRendition(rendition, readingSettings);
@@ -809,7 +861,11 @@ export async function createEpubBridge({
       return;
     }
 
-    const sectionHref = getContentsSectionHref(contents);
+    const sectionHref = getContentsSectionHref(
+      contents,
+      spineHrefByIndex,
+      Array.from(spineHrefByIndex.values()),
+    );
     if (!sectionHref) {
       return;
     }
@@ -1203,6 +1259,14 @@ export async function createEpubBridge({
 
   try {
     await awaitWithTimeout(epubBook.ready, BOOK_READY_TIMEOUT_MS, "BOOK_READY_TIMEOUT");
+
+    epubBook.spine.each((section: { href?: string; index?: number } | null) => {
+      if (!section?.href || typeof section.index !== "number") {
+        return;
+      }
+
+      spineHrefByIndex.set(section.index, normalizeHref(section.href));
+    });
 
     const updateTocItems = (items: ReaderTocItem[]) => {
       tocItems = items;
