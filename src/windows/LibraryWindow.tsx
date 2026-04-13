@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { message, open } from "@tauri-apps/plugin-dialog";
 
 import { BookContextMenu } from "@/components/library/BookContextMenu";
@@ -181,16 +181,6 @@ export default function LibraryWindow() {
 
   const deleteTargetBook = contextMenu?.book ?? null;
 
-  const subtitle = useMemo(() => {
-    if (isSearchActive) {
-      return null;
-    }
-
-    return section === "recent"
-      ? "Books opened in the last 30 days."
-      : `${allBooksQuery.data?.length ?? 0} books in your library.`;
-  }, [allBooksQuery.data?.length, isSearchActive, section]);
-
   useEffect(() => {
     const standardLayoutQuery = window.matchMedia("(min-width: 700px) and (max-width: 999px)");
 
@@ -209,7 +199,7 @@ export default function LibraryWindow() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[--color-bg-window] text-[--color-text-primary]">
+    <main className="min-h-screen bg-[#19191b] text-[--color-text-primary]">
       <DuplicateBanner titles={duplicateTitles} onDismiss={clearDuplicateTitles} />
       <DropZone onFiles={runImport} onVisibilityChange={setDropZoneVisible} />
 
@@ -227,7 +217,7 @@ export default function LibraryWindow() {
       <Sheet open={sidebarSheetOpen} onOpenChange={setSidebarSheetOpen}>
         <SheetContent
           side="left"
-          className="w-[250px] border-r border-[--color-border] bg-[--color-bg-sidebar] p-0 text-[--color-text-primary] sm:max-w-[250px]"
+          className="w-[210px] border-r-0 bg-[#19191b] p-0 text-[--color-text-primary] sm:max-w-[210px]"
         >
           <Sidebar
             activeSection={section}
@@ -242,7 +232,7 @@ export default function LibraryWindow() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen bg-[radial-gradient(circle_at_11%_0%,rgba(35,53,69,0.28)_0%,rgba(24,24,26,0)_22%),radial-gradient(circle_at_58%_-12%,rgba(49,49,54,0.18)_0%,rgba(24,24,26,0)_32%),linear-gradient(180deg,#1d1d20_0%,#18181a_100%)]">
         <Sidebar
           activeSection={section}
           allCount={allBooksQuery.data?.length ?? 0}
@@ -250,7 +240,7 @@ export default function LibraryWindow() {
           onSectionChange={setSection}
         />
 
-        <section className="relative isolate flex min-h-screen flex-1 flex-col bg-[--color-bg-content]">
+        <section className="relative isolate flex min-h-screen flex-1 flex-col bg-transparent before:pointer-events-none before:absolute before:inset-0 before:bg-[radial-gradient(circle_at_0%_0%,rgba(35,53,69,0.12)_0%,rgba(24,24,26,0)_24%)] before:content-['']">
           <LibraryToolbar
             isImporting={importInProgress || importBooksMutation.isPending}
             searchQuery={searchQuery}
@@ -260,17 +250,14 @@ export default function LibraryWindow() {
             onToggleSidebar={() => setSidebarSheetOpen(true)}
           />
 
-          <div className="relative z-0 flex-1 px-6 py-8">
-            <div className="mx-auto max-w-[1504px]">
-              <div className="mb-8">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[--color-text-section]">
-                  Library
-                </p>
-                <h1 className="mt-1 text-[28px] font-bold tracking-tight text-[--color-text-primary]">
+          <div className="relative z-0 flex-1 px-8 pb-12 pt-10 min-[1000px]:px-[72px] min-[1000px]:pt-10">
+            <div className="w-full max-w-[1504px]">
+              <div className="mb-14">
+                <h1 className="font-serif text-[44px] font-semibold leading-[0.9] tracking-[-0.065em] text-white/98 min-[1000px]:text-[64px]">
                   {heading}
                 </h1>
-                {subtitle ? (
-                  <p className="mt-2 text-sm text-[--color-text-muted]">{subtitle}</p>
+                {isSearchActive ? (
+                  <p className="mt-3 text-sm text-white/42">Showing matches for “{debouncedQuery}”.</p>
                 ) : null}
               </div>
 

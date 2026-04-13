@@ -36,6 +36,7 @@ export function DisplaySettingsPopover({
 }: DisplaySettingsPopoverProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const darkTheme = settings.theme === "dark";
 
   useEffect(() => {
     if (!open) {
@@ -75,7 +76,12 @@ export function DisplaySettingsPopover({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((currentOpen) => !currentOpen)}
-        className="flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold tracking-[-0.02em] text-black/70 transition hover:bg-black/[0.05] hover:text-black/85 disabled:opacity-100"
+        className={[
+          "flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[15px] font-semibold tracking-[-0.02em] transition disabled:opacity-100",
+          darkTheme
+            ? "text-white/78 hover:bg-white/[0.07] hover:text-white/92"
+            : "text-black/70 hover:bg-black/[0.05] hover:text-black/85",
+        ].join(" ")}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="Display settings"

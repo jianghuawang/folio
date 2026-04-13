@@ -406,6 +406,42 @@ function registerReaderThemes(rendition: Rendition) {
   });
 }
 
+function syncThemeStylesToVisibleContents(rendition: Rendition, theme: ReadingTheme) {
+  const styles = THEME_STYLES[theme];
+  const getContents = (
+    rendition as Rendition & {
+      getContents?: () => Array<{
+        document: Document;
+        window?: Window;
+      }>;
+    }
+  ).getContents;
+
+  if (typeof getContents !== "function") {
+    return;
+  }
+
+  getContents.call(rendition).forEach((contents) => {
+    const documentElement = contents.document.documentElement;
+    const body = contents.document.body;
+    const frameElement = contents.window?.frameElement as HTMLElement | null | undefined;
+
+    documentElement?.style.setProperty("background", styles.background);
+    documentElement?.style.setProperty("color", styles.color);
+
+    body?.style.setProperty("background", styles.background);
+    body?.style.setProperty("color", styles.color);
+
+    contents.document
+      .querySelectorAll<HTMLElement>(".folio-translation")
+      .forEach((translationElement) => {
+        translationElement.style.setProperty("color", styles.translationColor);
+      });
+
+    frameElement?.style.setProperty("background", styles.background);
+  });
+}
+
 function applyReadingSettingsToRendition(rendition: Rendition, settings: ReadingSettings) {
   rendition.themes.select(`folio-${settings.theme}`);
   rendition.themes.font(FONT_STACKS[settings.font_family]);
@@ -413,6 +449,7 @@ function applyReadingSettingsToRendition(rendition: Rendition, settings: Reading
   rendition.themes.override("font-family", FONT_STACKS[settings.font_family]);
   rendition.themes.override("font-size", `${settings.font_size}px`);
   rendition.themes.override("line-height", settings.line_height.toString());
+  syncThemeStylesToVisibleContents(rendition, settings.theme);
 }
 
 function updateReaderMargins(rendition: Rendition) {

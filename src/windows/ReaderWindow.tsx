@@ -599,7 +599,12 @@ export default function ReaderWindow() {
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-[--color-bg-window] text-[--color-text-primary]">
+    <main
+      className={[
+        "h-screen overflow-hidden text-[--color-text-primary]",
+        currentReadingSettings.theme === "dark" ? "bg-[#2c2c2e]" : "bg-[--color-bg-window]",
+      ].join(" ")}
+    >
       <div className="group relative h-full w-full overflow-hidden">
         <EpubViewer
           bilingualMode={translation.bilingualMode}
@@ -665,6 +670,7 @@ export default function ReaderWindow() {
 
         <PageChevrons
           disabled={!bridge}
+          theme={currentReadingSettings.theme}
           onPrev={() => {
             void bridge?.prev();
           }}
@@ -673,7 +679,11 @@ export default function ReaderWindow() {
           }}
         />
 
-        <ProgressBar chapterTitle={location.chapterTitle} progress={location.progress} />
+        <ProgressBar
+          chapterTitle={location.chapterTitle}
+          progress={location.progress}
+          theme={currentReadingSettings.theme}
+        />
 
         <TocDrawer
           anchorElement={tocTriggerRef.current}
