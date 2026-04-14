@@ -30,24 +30,22 @@ function SidebarButton({
       type="button"
       onClick={onClick}
       className={[
-        "flex h-[44px] w-full items-center justify-between rounded-[14px] px-[14px] text-left text-[14px] transition-all duration-150",
+        "flex h-[30px] w-full items-center justify-between rounded-[6px] px-2.5 text-left text-[13px] transition-colors duration-100",
         active
-          ? "bg-[linear-gradient(90deg,rgba(86,86,90,0.34)_0%,rgba(60,60,64,0.28)_100%)] text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-          : "text-white/74 hover:bg-white/[0.035] hover:text-white/90",
+          ? "bg-white/[0.12] font-medium text-white"
+          : "text-white/70 hover:bg-white/[0.06] hover:text-white/90",
       ].join(" ")}
     >
-      <span className="flex min-w-0 items-center gap-3">
+      <span className="flex min-w-0 items-center gap-2">
         <Icon
           className={[
-            "h-[18px] w-[18px] shrink-0 stroke-[1.9]",
-            active ? "text-white/66" : "text-white/58",
+            "h-[15px] w-[15px] shrink-0 stroke-[1.8]",
+            active ? "text-white/80" : "text-white/50",
           ].join(" ")}
         />
-        <span className={active ? "font-medium text-white/82" : "font-medium text-white/80"}>
-          {label}
-        </span>
+        <span className="truncate">{label}</span>
       </span>
-      <span className={["text-[11px]", active ? "text-white/40" : "text-white/28"].join(" ")}>
+      <span className={["text-[11px]", active ? "text-white/36" : "text-white/24"].join(" ")}>
         {count}
       </span>
     </button>
@@ -64,21 +62,15 @@ export function Sidebar({
   return (
     <aside
       className={[
-        "w-[210px] shrink-0 bg-transparent pl-2 pb-2 pt-2",
+        "w-[200px] shrink-0",
         variant === "docked"
-          ? "hidden pr-0 min-[1000px]:block"
-          : "w-full pr-2",
+          ? "hidden min-[1000px]:block"
+          : "w-full",
       ].join(" ")}
     >
-      <div className="flex h-full min-h-[calc(100vh-16px)] flex-col rounded-[28px] border border-white/[0.055] bg-[radial-gradient(circle_at_18%_0%,rgba(31,49,63,0.7)_0%,rgba(25,26,29,0.96)_26%,rgba(20,20,23,0.98)_72%,rgba(19,19,21,1)_100%)] px-[18px] pb-8 pt-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-        <div>
-          <h1 className="text-[27px] font-semibold tracking-[-0.06em] text-white/96">
-            Library
-          </h1>
-        </div>
-
-        <div className="mt-16 space-y-2.5">
-          <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-white/36">
+      <div className="flex h-full min-h-screen flex-col px-3 pb-6 pt-12">
+        <div className="space-y-1">
+          <p className="mb-2 px-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-white/30">
             Library
           </p>
           <SidebarButton

@@ -199,7 +199,7 @@ export default function LibraryWindow() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#19191b] text-[--color-text-primary]">
+    <main className="min-h-screen bg-[#1e1e1e] text-[--color-text-primary]">
       <DuplicateBanner titles={duplicateTitles} onDismiss={clearDuplicateTitles} />
       <DropZone onFiles={runImport} onVisibilityChange={setDropZoneVisible} />
 
@@ -217,7 +217,7 @@ export default function LibraryWindow() {
       <Sheet open={sidebarSheetOpen} onOpenChange={setSidebarSheetOpen}>
         <SheetContent
           side="left"
-          className="w-[210px] border-r-0 bg-[#19191b] p-0 text-[--color-text-primary] sm:max-w-[210px]"
+          className="w-[200px] border-r-0 bg-[#1e1e1e] p-0 text-[--color-text-primary] sm:max-w-[200px]"
         >
           <Sidebar
             activeSection={section}
@@ -232,7 +232,7 @@ export default function LibraryWindow() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-screen bg-[radial-gradient(circle_at_11%_0%,rgba(35,53,69,0.28)_0%,rgba(24,24,26,0)_22%),radial-gradient(circle_at_58%_-12%,rgba(49,49,54,0.18)_0%,rgba(24,24,26,0)_32%),linear-gradient(180deg,#1d1d20_0%,#18181a_100%)]">
+      <div className="flex min-h-screen bg-[#1e1e1e]">
         <Sidebar
           activeSection={section}
           allCount={allBooksQuery.data?.length ?? 0}
@@ -240,7 +240,7 @@ export default function LibraryWindow() {
           onSectionChange={setSection}
         />
 
-        <section className="relative isolate flex min-h-screen flex-1 flex-col bg-transparent before:pointer-events-none before:absolute before:inset-0 before:bg-[radial-gradient(circle_at_0%_0%,rgba(35,53,69,0.12)_0%,rgba(24,24,26,0)_24%)] before:content-['']">
+        <section className="flex min-h-screen flex-1 flex-col">
           <LibraryToolbar
             isImporting={importInProgress || importBooksMutation.isPending}
             searchQuery={searchQuery}
@@ -250,10 +250,10 @@ export default function LibraryWindow() {
             onToggleSidebar={() => setSidebarSheetOpen(true)}
           />
 
-          <div className="relative z-0 flex-1 px-8 pb-12 pt-10 min-[1000px]:px-[72px] min-[1000px]:pt-10">
+          <div className="flex-1 px-8 pb-12 pt-4 min-[1000px]:px-10 min-[1000px]:pt-4">
             <div className="w-full max-w-[1504px]">
-              <div className="mb-14">
-                <h1 className="font-serif text-[44px] font-semibold leading-[0.9] tracking-[-0.065em] text-white/98 min-[1000px]:text-[64px]">
+              <div className="mb-8">
+                <h1 className="text-[28px] font-bold leading-[1.1] tracking-[-0.02em] text-white min-[1000px]:text-[34px]">
                   {heading}
                 </h1>
                 {isSearchActive ? (

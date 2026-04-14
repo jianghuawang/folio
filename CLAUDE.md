@@ -1,8 +1,11 @@
 ## Project Overview
+
 Folio is a macOS-only Tauri desktop ePub reader that manages a local library, opens each book in its own reader window, supports highlights and notes, performs paragraph-level OpenRouter bilingual translation, and generates quote-cover images while preserving a macOS Books-style reading experience. The stack is fixed: the renderer in `src/` uses React 18.3, TypeScript 5.5, Vite 5.4, Tailwind CSS 3.4, shadcn/ui, Zustand, TanStack Query, React Hook Form, Zod, epub.js, and React Router; the native backend in `src-tauri/` uses Tauri 2.1, Rust, rusqlite, reqwest, tokio, serde, sha2, zip, keyring, minidom, and quick-xml, with the repo root organized around those two app roots plus top-level build/config files.
 
 ## Source of Truth Hierarchy
+
 When implementing anything, consult documents in this exact order:
+
 1. PRD.md — what to build and how it should look/behave. NEVER deviate.
 2. TECH_DESIGN.md — how to build it. NEVER choose a different pattern or library.
 3. tasks.md — scope boundary only. Tasks point to the spec, they are not the spec.
@@ -12,13 +15,16 @@ Follow PRD.md and TECH_DESIGN.md. Do not use your own judgment to fill gaps —
 stop and ask instead.
 
 ## Before Writing Any Code
+
 Re-read these every time, without exception:
+
 - The relevant wireframe in PRD.md Section 5b
 - The relevant error/empty/loading states in PRD.md Section 7
 - The component map in TECH_DESIGN.md Section 4c
 - The key implementation rules in TECH_DESIGN.md Section 6 and the component patterns in TECH_DESIGN.md Section 7
 
 ## Tech Stack (non-negotiable)
+
 - React 18.3 for the renderer UI framework
 - TypeScript 5.5 for frontend code
 - Vite 5.4 for frontend bundling
@@ -47,6 +53,7 @@ Re-read these every time, without exception:
 - No authentication layer of any kind
 
 ## Folder Structure Rules
+
 - `src/` contains the React renderer only. Do not place Rust code, SQL, or native-only logic here.
 - `src/windows/` contains only the three window root components: Library, Reader, and Settings. Do not put shared business logic here.
 - `src/components/ui/` contains CLI-generated shadcn/ui files only. Do not manually edit these files.
@@ -68,6 +75,7 @@ Re-read these every time, without exception:
 - `src-tauri/src/keychain.rs` is the thin macOS Keychain wrapper. Do not expose API key material to the renderer.
 
 ## Coding Standards
+
 - All implementation must follow TECH_DESIGN.md Section 6 exactly; these rules are not optional.
 - Call `invoke()` only from `src/lib/tauri-commands.ts`, and expose typed wrapper functions to hooks/components.
 - Every async Tauri wrapper must use `try/catch` and rethrow typed `FolioError` values with a `code` field.
@@ -85,16 +93,15 @@ Re-read these every time, without exception:
 - Use loading skeletons, inline retryable errors, and mutation invalidation patterns exactly as described in TECH_DESIGN.md Section 4d and Section 7.
 
 ## Forbidden Behaviors
-- ❌ Do NOT invent UI layout not shown in the ASCII wireframes in PRD.md Section 5b
-- ❌ Do NOT use any library not listed in TECH_DESIGN.md Section 1
-- ❌ Do NOT add fields or endpoints not defined in TECH_DESIGN.md Section 3 and Section 5
+
 - ❌ Do NOT skip loading, error, or empty states defined in PRD.md Section 7
 - ❌ Do NOT modify files outside the scope of the current task
 - ❌ Do NOT resolve conflicts between documents — flag them and stop
 
 ## Self-Check Before Marking Any Task Done
+
 Run through this checklist. Do not say "done" until all pass:
-- [ ] UI matches the ASCII wireframe in PRD.md Section 5b (compared line by line)
+
 - [ ] Component structure matches TECH_DESIGN.md Section 4c for this page
 - [ ] All IPC calls use the exact command names, args, and event contracts from TECH_DESIGN.md Section 5
 - [ ] Loading / error / empty states implemented per PRD.md Section 7

@@ -69,9 +69,19 @@ export default {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        "book-card-in": {
+          "0%": { opacity: "0", transform: "translateY(16px) scale(0.97)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "reader-enter": {
+          "0%": { opacity: "0", transform: "scale(0.985)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 200ms ease",
+        "book-card-in": "book-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "reader-enter": "reader-enter 0.5s cubic-bezier(0.19, 1, 0.22, 1) both",
       },
       screens: {
         compact: "700px",

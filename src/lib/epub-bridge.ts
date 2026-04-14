@@ -1260,8 +1260,29 @@ export async function createEpubBridge({
     },
     goToCfi: (cfi) => rendition.display(cfi),
     goToHref: (href) => rendition.display(href),
-    next: () => rendition.next(),
-    prev: () => rendition.prev(),
+    next: async () => {
+      const pageTurnClass = "page-turning-next";
+      container.classList.add(pageTurnClass);
+      await rendition.next();
+      const onEnd = () => {
+        container.classList.remove(pageTurnClass);
+        container.removeEventListener("animationend", onEnd);
+      };
+      container.addEventListener("animationend", onEnd);
+      // Safety fallback in case animationend doesn't fire
+      setTimeout(() => container.classList.remove(pageTurnClass), 500);
+    },
+    prev: async () => {
+      const pageTurnClass = "page-turning-prev";
+      container.classList.add(pageTurnClass);
+      await rendition.prev();
+      const onEnd = () => {
+        container.classList.remove(pageTurnClass);
+        container.removeEventListener("animationend", onEnd);
+      };
+      container.addEventListener("animationend", onEnd);
+      setTimeout(() => container.classList.remove(pageTurnClass), 500);
+    },
     resolveAnnotationLocation,
     setHighlights: (highlights) => {
       currentHighlights = highlights;

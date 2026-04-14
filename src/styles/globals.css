@@ -54,6 +54,18 @@
     --color-hl-blue: #0a84ff;
     --color-hl-pink: #ff375f;
     --color-hl-purple: #bf5af2;
+
+    /* Animation easings – macOS-style spring curves */
+    --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring-heavy: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+    --ease-in-out-smooth: cubic-bezier(0.45, 0, 0.55, 1);
+
+    /* Animation durations */
+    --duration-fast: 150ms;
+    --duration-normal: 250ms;
+    --duration-slow: 400ms;
+    --duration-page-turn: 350ms;
   }
 
   * {
@@ -81,5 +93,127 @@
 
   #epub-container {
     overscroll-behavior: none;
+  }
+}
+
+/* ── Book card animations ── */
+@keyframes book-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes book-press {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+}
+
+/* ── Page turn animations ── */
+@keyframes page-slide-out-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-3%);
+    opacity: 0;
+  }
+}
+
+@keyframes page-slide-in-right {
+  from {
+    transform: translateX(3%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes page-slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(3%);
+    opacity: 0;
+  }
+}
+
+@keyframes page-slide-in-left {
+  from {
+    transform: translateX(-3%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ── Reader entrance ── */
+@keyframes reader-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Utility animation classes ── */
+.animate-book-card-in {
+  animation: book-card-in 0.45s var(--ease-spring) both;
+}
+
+.animate-book-press {
+  animation: book-press 0.28s var(--ease-spring) forwards;
+}
+
+.animate-reader-enter {
+  animation: reader-enter 0.5s var(--ease-out-expo) both;
+}
+
+/* Page turn classes – applied/removed via JS */
+.page-turning-next {
+  animation: page-slide-out-left 0.16s var(--ease-in-out-smooth) forwards,
+    page-slide-in-right 0.22s var(--ease-spring) 0.14s forwards;
+}
+
+.page-turning-prev {
+  animation: page-slide-out-right 0.16s var(--ease-in-out-smooth) forwards,
+    page-slide-in-left 0.22s var(--ease-spring) 0.14s forwards;
+}
+
+/* ── Respect reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .page-turning-next,
+  .page-turning-prev {
+    animation: none !important;
   }
 }

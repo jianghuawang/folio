@@ -297,6 +297,7 @@ export function EpubViewer({
       className={[
         "relative h-full w-full overflow-hidden pt-[128px] pb-[52px]",
         BACKGROUND_CLASSES[readingSettings.theme],
+        !isLoading && !error ? "animate-reader-enter" : "",
       ].join(" ")}
     >
       <div ref={containerRef} id="epub-container" className="h-full w-full" />

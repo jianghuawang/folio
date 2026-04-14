@@ -1,7 +1,7 @@
+import { useCallback, useRef } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { MoreHorizontal } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { hashStringToColor } from "@/lib/utils";
 import type { Book } from "@/types/book";
 
@@ -9,6 +9,8 @@ interface BookCardProps {
   book: Book;
   onOpen: (bookId: string) => void;
   onContextMenu: (book: Book, x: number, y: number) => void;
+  /** Stagger delay in ms for entrance animation */
+  animationDelay?: number;
 }
 
 function getBadge(book: Book): { label: string; kind: "new" | "progress" } | null {
@@ -29,24 +31,46 @@ function getBadge(book: Book): { label: string; kind: "new" | "progress" } | nul
   return null;
 }
 
-export function BookCard({ book, onOpen, onContextMenu }: BookCardProps) {
+export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: BookCardProps) {
   const badge = getBadge(book);
   const coverImageSrc = book.cover_image_path ? convertFileSrc(book.cover_image_path) : null;
   const placeholderColor = hashStringToColor(book.title);
+  const coverRef = useRef<HTMLButtonElement>(null);
+
+  const handleOpen = useCallback(() => {
+    const el = coverRef.current;
+    if (el) {
+      el.classList.add("animate-book-press");
+      el.addEventListener(
+        "animationend",
+        () => {
+          el.classList.remove("animate-book-press");
+          onOpen(book.id);
+        },
+        { once: true },
+      );
+    } else {
+      onOpen(book.id);
+    }
+  }, [book.id, onOpen]);
 
   return (
     <article
-      className="group w-[160px] cursor-default select-none"
-      onDoubleClick={() => onOpen(book.id)}
+      className="animate-book-card-in group w-[160px] cursor-default select-none"
+      style={{ animationDelay: `${animationDelay}ms` }}
+      onDoubleClick={handleOpen}
       onContextMenu={(event) => {
         event.preventDefault();
         onContextMenu(book, event.clientX, event.clientY);
       }}
     >
+      {/* Book cover */}
       <button
+        ref={coverRef}
         type="button"
-        onClick={() => onOpen(book.id)}
-        className="block h-[220px] w-[160px] cursor-pointer overflow-hidden bg-[--color-bg-surface] text-left shadow-[0_10px_24px_rgba(0,0,0,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[--color-primary]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-bg-content]"
+        onClick={handleOpen}
+        className="relative block h-[220px] w-[160px] cursor-pointer overflow-hidden rounded-[5px] bg-[--color-bg-surface] text-left shadow-[0_4px_12px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_24px_rgba(0,0,0,0.5)] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[--color-primary]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e1e1e]"
+        style={{ transitionTimingFunction: "var(--ease-spring)" }}
         aria-label={`Open ${book.title}`}
       >
         {coverImageSrc ? (
@@ -66,38 +90,39 @@ export function BookCard({ book, onOpen, onContextMenu }: BookCardProps) {
         )}
       </button>
 
-      <div className="mt-3 space-y-1">
-        <p className="line-clamp-2 text-[14px] font-medium leading-[1.35] text-white/96">
+      {/* Meta row: progress / ... / NEW — matches macOS Books layout */}
+      <div className="mt-2 flex h-5 items-center justify-between px-0.5">
+        {/* Left: progress percentage */}
+        <span className="min-w-[28px] text-[11px] text-white/30">
+          {badge?.kind === "progress" ? badge.label : ""}
+        </span>
+
+        {/* Center: three-dot menu — always visible */}
+        <button
+          type="button"
+          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-white/30 transition-colors hover:text-white/60"
+          onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            onContextMenu(book, rect.left + rect.width / 2, rect.bottom + 6);
+          }}
+          aria-label={`More actions for ${book.title}`}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Right: NEW badge — plain text, not a pill */}
+        <span className="min-w-[28px] text-right text-[11px] font-medium text-white/30">
+          {badge?.kind === "new" ? badge.label : ""}
+        </span>
+      </div>
+
+      {/* Title and author */}
+      <div className="mt-0.5 space-y-0.5 px-0.5">
+        <p className="line-clamp-2 text-[12px] font-normal leading-[1.3] text-white/80">
           {book.title}
         </p>
-        <p className="truncate text-[12px] text-white/46">{book.author}</p>
-        <div className="flex items-center justify-between gap-2 pt-1">
-          {badge ? (
-            badge.kind === "new" ? (
-              <span className="inline-flex rounded-full bg-[--color-primary] px-2 py-1 text-[11px] font-semibold leading-none text-white shadow-[0_4px_12px_rgba(10,132,255,0.22)]">
-                {badge.label}
-              </span>
-            ) : (
-              <span className="text-[12px] text-white/42">{badge.label}</span>
-            )
-          ) : (
-            <span className="h-4" />
-          )}
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 rounded-full text-white/28 opacity-0 transition hover:bg-white/[0.08] hover:text-white/72 group-hover:opacity-100"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              onContextMenu(book, rect.left + rect.width / 2, rect.bottom + 6);
-            }}
-            aria-label={`Open actions for ${book.title}`}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </div>
+        <p className="truncate text-[11px] text-white/30">{book.author}</p>
       </div>
     </article>
   );
