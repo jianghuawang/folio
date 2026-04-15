@@ -23,7 +23,9 @@ function MetadataRow({ label, value }: { label: string; value: string }) {
       <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[--color-text-section]">
         {label}
       </dt>
-      <dd className="break-words text-sm text-[--color-text-primary]">{value}</dd>
+      <dd className="break-all text-sm text-[--color-text-primary] [overflow-wrap:anywhere]">
+        {value}
+      </dd>
     </div>
   );
 }

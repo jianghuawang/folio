@@ -4,9 +4,7 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State, WebviewUrl, WebviewWindowBuilder};
 
-use crate::{
-    db::AppState, load_persisted_window_state, restore_window_state, window_state_key_for_reader,
-};
+use crate::{db::AppState, restore_window_state, window_state_key_for_reader};
 
 const DEFAULT_FONT_SIZE: i64 = 18;
 const DEFAULT_LINE_HEIGHT: f64 = 1.6;
@@ -70,7 +68,7 @@ pub fn open_reader_window<R: Runtime>(
         return Ok(());
     }
 
-    let mut builder = WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         &app,
         window_label.clone(),
         WebviewUrl::App(format!("/reader?bookId={book_id}").into()),
@@ -78,16 +76,12 @@ pub fn open_reader_window<R: Runtime>(
     .title(format!("{book_title} — Folio"))
     .inner_size(900.0, 700.0)
     .min_inner_size(600.0, 500.0)
-    .visible(false);
+    .center()
+    .visible(false)
+    .build()
+    .map_err(|error| error.to_string())?;
 
     let window_state_key = window_state_key_for_reader(&book_id);
-    if let Some(persisted_state) = load_persisted_window_state(state.inner(), &window_state_key)? {
-        builder = builder
-            .position(persisted_state.x as f64, persisted_state.y as f64)
-            .inner_size(persisted_state.width as f64, persisted_state.height as f64);
-    }
-
-    let window = builder.build().map_err(|error| error.to_string())?;
     restore_window_state(&window, state.inner(), &window_state_key)
         .map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;

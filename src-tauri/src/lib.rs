@@ -1,20 +1,25 @@
 mod commands;
 mod db;
 mod epub;
-mod keychain;
 mod llm;
+mod platform;
+mod secure_store;
 
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, Runtime, Size, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder, Window, WindowEvent,
 };
 
-use crate::db::AppState;
+use crate::{
+    db::AppState,
+    platform::{
+        menu::{build_menu, SETTINGS_MENU_ID},
+        windows::clamp_window_state,
+    },
+};
 
-const SETTINGS_MENU_ID: &str = "settings";
 const SETTINGS_WINDOW_LABEL: &str = "settings";
 const MAIN_WINDOW_LABEL: &str = "main";
 const LIBRARY_WINDOW_STATE_KEY: &str = "window_state_library";
@@ -45,6 +50,7 @@ fn open_settings_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     .inner_size(560.0, 400.0)
     .min_inner_size(560.0, 400.0)
     .resizable(false)
+    .center()
     .visible(false)
     .build()?;
 
@@ -53,98 +59,9 @@ fn open_settings_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     }
 
     window.show()?;
+    window.set_focus()?;
 
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let package_name = app.package_info().name.clone();
-    let settings_item = MenuItem::with_id(
-        app,
-        SETTINGS_MENU_ID,
-        "Settings…",
-        true,
-        Some("CmdOrCtrl+,"),
-    )?;
-
-    let app_menu = Submenu::with_items(
-        app,
-        package_name,
-        true,
-        &[
-            &PredefinedMenuItem::about(app, None, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &settings_item,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, None)?,
-        ],
-    )?;
-
-    let file_menu = Submenu::with_items(
-        app,
-        "File",
-        true,
-        &[&PredefinedMenuItem::close_window(app, None)?],
-    )?;
-
-    let edit_menu = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
-        ],
-    )?;
-
-    let view_menu = Submenu::with_items(
-        app,
-        "View",
-        true,
-        &[&PredefinedMenuItem::fullscreen(app, None)?],
-    )?;
-
-    let window_menu = Submenu::with_items(
-        app,
-        "Window",
-        true,
-        &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
-        ],
-    )?;
-
-    let help_menu = Submenu::with_items(app, "Help", true, &[])?;
-
-    Menu::with_items(
-        app,
-        &[
-            &app_menu,
-            &file_menu,
-            &edit_menu,
-            &view_menu,
-            &window_menu,
-            &help_menu,
-        ],
-    )
-}
-
-#[cfg(not(target_os = "macos"))]
-fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    Menu::default(app)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -171,7 +88,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let app_state = db::init_app_state(app.handle())?;
+            let app_state = db::init_app_state(app.handle())
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
             commands::translations::normalize_in_progress_jobs(&app_state)
                 .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
             app.manage(app_state);
@@ -257,17 +175,18 @@ pub(crate) fn restore_window_state<R: Runtime>(
     let Some(persisted_state) = load_persisted_window_state(state, key)? else {
         return Ok(());
     };
+    let clamped_state = clamp_window_state(&window.app_handle(), &persisted_state)?;
 
     window
         .set_size(Size::Physical(PhysicalSize::new(
-            persisted_state.width,
-            persisted_state.height,
+            clamped_state.width,
+            clamped_state.height,
         )))
         .map_err(|error| error.to_string())?;
     window
         .set_position(Position::Physical(PhysicalPosition::new(
-            persisted_state.x,
-            persisted_state.y,
+            clamped_state.x,
+            clamped_state.y,
         )))
         .map_err(|error| error.to_string())?;
 

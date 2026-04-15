@@ -7,6 +7,7 @@ use crate::{
     db::AppState,
     epub::exporter,
     llm::{translation_from_row, translation_job_from_row, TranslationJobStatus},
+    platform::paths,
 };
 
 #[tauri::command]
@@ -164,7 +165,7 @@ fn validate_save_path(save_path: &str, managed_file_path: &str) -> Result<(), St
         return Err("WRITE_ERROR".to_string());
     }
 
-    if export_path == Path::new(managed_file_path) {
+    if paths::paths_equal(export_path, Path::new(managed_file_path))? {
         return Err("WRITE_ERROR".to_string());
     }
 
@@ -194,7 +195,7 @@ fn validate_highlight_export_path(
         return Err("WRITE_ERROR".to_string());
     }
 
-    if export_path == Path::new(managed_file_path) {
+    if paths::paths_equal(export_path, Path::new(managed_file_path))? {
         return Err("WRITE_ERROR".to_string());
     }
 

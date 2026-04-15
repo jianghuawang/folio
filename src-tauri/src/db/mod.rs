@@ -1,15 +1,12 @@
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{fs, sync::Mutex};
 
 use rusqlite::Connection;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
-use crate::db::migrations::run_migrations;
+use crate::{db::migrations::run_migrations, platform::paths};
 
 pub mod migrations;
 pub mod schema;
-
-pub const APP_SUPPORT_DIRECTORY: &str = "Folio";
-pub const DATABASE_FILENAME: &str = "folio.db";
 
 pub type DbConn = Mutex<Connection>;
 
@@ -18,33 +15,20 @@ pub struct AppState {
     pub db: DbConn,
 }
 
-pub fn init_app_state<R: Runtime>(
-    app_handle: &AppHandle<R>,
-) -> Result<AppState, Box<dyn std::error::Error>> {
-    let app_support_dir = resolve_app_support_dir(app_handle)?;
+pub fn init_app_state<R: Runtime>(app_handle: &AppHandle<R>) -> Result<AppState, String> {
+    let app_support_dir = paths::app_data_root(app_handle)?;
 
-    fs::create_dir_all(&app_support_dir)?;
+    fs::create_dir_all(&app_support_dir).map_err(|error| error.to_string())?;
 
-    let database_path = app_support_dir.join(DATABASE_FILENAME);
-    let mut connection = Connection::open(database_path)?;
+    let database_path = paths::database_path(app_handle)?;
+    let mut connection = Connection::open(database_path).map_err(|error| error.to_string())?;
 
-    configure_connection(&connection)?;
-    run_migrations(&mut connection)?;
+    configure_connection(&connection).map_err(|error| error.to_string())?;
+    run_migrations(&mut connection).map_err(|error| error.to_string())?;
 
     Ok(AppState {
         db: Mutex::new(connection),
     })
-}
-
-fn resolve_app_support_dir<R: Runtime>(
-    app_handle: &AppHandle<R>,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let home_dir = app_handle.path().home_dir()?;
-
-    Ok(home_dir
-        .join("Library")
-        .join("Application Support")
-        .join(APP_SUPPORT_DIRECTORY))
 }
 
 fn configure_connection(connection: &Connection) -> rusqlite::Result<()> {

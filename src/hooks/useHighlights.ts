@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { desktopDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import {
@@ -18,6 +19,14 @@ function slugifyFileName(value: string, fallback: string) {
     .replace(/^-+|-+$/g, "");
 
   return slug.length > 0 ? slug : fallback;
+}
+
+async function resolveDesktopDefaultPath(fileName: string) {
+  try {
+    return await join(await desktopDir(), fileName);
+  } catch {
+    return fileName;
+  }
 }
 
 export function useHighlights(bookId: string | null) {
@@ -77,7 +86,9 @@ export function useExportHighlights(bookId: string | null, bookTitle: string) {
       }
 
       const savePath = await save({
-        defaultPath: `~/Desktop/${slugifyFileName(bookTitle, "folio_book")}_highlights.md`,
+        defaultPath: await resolveDesktopDefaultPath(
+          `${slugifyFileName(bookTitle, "folio_book")}_highlights.md`,
+        ),
         filters: [
           {
             name: "Markdown",

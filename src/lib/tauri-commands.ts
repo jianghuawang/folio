@@ -21,13 +21,21 @@ export class FolioError extends Error {
   }
 }
 
+function normalizeErrorCode(code: string): string {
+  if (code === "KEYCHAIN_ERROR") {
+    return "SECURE_STORAGE_ERROR";
+  }
+
+  return code;
+}
+
 function resolveErrorCode(error: unknown): string {
   if (typeof error === "string" && error.length > 0) {
-    return error;
+    return normalizeErrorCode(error);
   }
 
   if (error instanceof Error && error.message.length > 0) {
-    return error.message;
+    return normalizeErrorCode(error.message);
   }
 
   return "UNKNOWN_ERROR";

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
+import { desktopDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import {
@@ -45,6 +46,14 @@ function slugifyFileName(value: string, fallback: string) {
     .replace(/\s+/g, "_");
 
   return normalized.length > 0 ? normalized : fallback;
+}
+
+async function resolveDesktopDefaultPath(fileName: string) {
+  try {
+    return await join(await desktopDir(), fileName);
+  } catch {
+    return fileName;
+  }
 }
 
 export function useTranslation(bookId: string | null, bookTitle: string) {
@@ -305,8 +314,8 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         return;
       }
 
-      if (error.code === "KEYCHAIN_ERROR") {
-        setStartError("Unable to access macOS Keychain. Please try again.");
+      if (error.code === "SECURE_STORAGE_ERROR" || error.code === "KEYCHAIN_ERROR") {
+        setStartError("Unable to access secure storage. Please try again.");
         return;
       }
 
@@ -363,7 +372,9 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         return false;
       }
 
-      const defaultPath = `~/Desktop/${slugifyFileName(bookTitle, "folio_book")}_bilingual.epub`;
+      const defaultPath = await resolveDesktopDefaultPath(
+        `${slugifyFileName(bookTitle, "folio_book")}_bilingual.epub`,
+      );
       const savePath = await save({
         defaultPath,
         filters: [

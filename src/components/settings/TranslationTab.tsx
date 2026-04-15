@@ -34,8 +34,8 @@ function getSettingsErrorMessage(error: unknown): string {
       return "API key is required for translation.";
     }
 
-    if (error.code === "KEYCHAIN_ERROR") {
-      return "Unable to access macOS Keychain. Please try again.";
+    if (error.code === "SECURE_STORAGE_ERROR" || error.code === "KEYCHAIN_ERROR") {
+      return "Unable to access secure storage. Please try again.";
     }
 
     if (error.code === "SQLITE_LOCK_ERROR") {
@@ -180,7 +180,7 @@ export function TranslationTab({
       <div className="space-y-2">
         <p className="text-sm font-medium text-[--color-text-secondary]">API Key Status</p>
         <p className="text-sm text-[--color-text-primary]">
-          {configured ? "Saved" : "Not saved"}
+          {configured ? "API key saved" : "No API key saved"}
         </p>
       </div>
 

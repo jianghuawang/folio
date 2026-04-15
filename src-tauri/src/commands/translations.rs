@@ -3,12 +3,12 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::{
     db::AppState,
-    keychain,
     llm::{
         generate_uuid_v4, now_unix_timestamp, serialize_paragraph_locators, translation_from_row,
         translation_job_from_row, worker, ParagraphLocator, Translation, TranslationJob,
         TranslationJobStatus, TranslationPauseReason, TranslationPausedEvent, DEFAULT_LLM_MODEL,
     },
+    secure_store,
 };
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ pub fn start_translation(
 ) -> Result<TranslationJob, String> {
     let replace_existing = replace_existing.unwrap_or(false);
     let target_language = target_language.trim().to_string();
-    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
 
     let (book, model, existing_job, existing_translation_count) = {
         let connection = state
@@ -259,7 +259,7 @@ pub fn resume_translation(
         (job, model, book.file_path)
     };
 
-    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
 
     if !worker::resume_job(&job.id) {
         worker::spawn_translation_worker(
@@ -406,7 +406,7 @@ pub fn retry_failed_paragraphs(
         (job, model, book.file_path, failed_locators)
     };
 
-    let api_key = keychain::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
 
     worker::spawn_translation_worker(
         app,

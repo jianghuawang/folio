@@ -4,11 +4,11 @@ use tauri::State;
 
 use crate::{
     db::AppState,
-    keychain,
     llm::{
         client::{LlmClient, TranslateParagraphError},
         DEFAULT_LLM_MODEL,
     },
+    secure_store,
 };
 
 const LLM_MODEL_KEY: &str = "llm_model";
@@ -86,24 +86,24 @@ pub fn save_app_settings(
 pub fn save_api_key(api_key: String) -> Result<(), String> {
     let normalized_api_key = api_key.trim();
     if normalized_api_key.is_empty() {
-        if keychain::has_api_key()? {
+        if secure_store::has_api_key()? {
             return Ok(());
         }
 
         return Err("API_KEY_REQUIRED".to_string());
     }
 
-    keychain::save_api_key(normalized_api_key)
+    secure_store::save_api_key(normalized_api_key)
 }
 
 #[tauri::command]
 pub fn has_api_key() -> Result<ApiKeyStatus, String> {
-    keychain::has_api_key().map(|configured| ApiKeyStatus { configured })
+    secure_store::has_api_key().map(|configured| ApiKeyStatus { configured })
 }
 
 #[tauri::command]
 pub fn clear_api_key() -> Result<(), String> {
-    keychain::clear_api_key()
+    secure_store::clear_api_key()
 }
 
 #[tauri::command]
@@ -117,7 +117,7 @@ pub async fn test_openrouter_connection(
     {
         Some(api_key)
     } else {
-        keychain::load_api_key()?
+        secure_store::load_api_key()?
     };
 
     let Some(api_key) = resolved_api_key else {

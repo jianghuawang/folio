@@ -2,16 +2,21 @@ use keyring::{Entry, Error as KeyringError};
 
 const SERVICE_NAME: &str = "com.folio.app";
 const ACCOUNT_NAME: &str = "llm_api_key";
+const SECURE_STORAGE_ERROR: &str = "SECURE_STORAGE_ERROR";
 
 fn entry() -> Result<Entry, KeyringError> {
     Entry::new(SERVICE_NAME, ACCOUNT_NAME)
+}
+
+fn map_error(_: KeyringError) -> String {
+    SECURE_STORAGE_ERROR.to_string()
 }
 
 pub fn save_api_key(api_key: &str) -> Result<(), String> {
     let normalized_api_key = api_key.trim();
     entry()
         .and_then(|entry| entry.set_password(normalized_api_key))
-        .map_err(|_| "KEYCHAIN_ERROR".to_string())
+        .map_err(map_error)
 }
 
 pub fn load_api_key() -> Result<Option<String>, String> {
@@ -22,7 +27,7 @@ pub fn load_api_key() -> Result<Option<String>, String> {
         Ok(password) if password.is_empty() => Ok(None),
         Ok(password) => Ok(Some(password)),
         Err(KeyringError::NoEntry) => Ok(None),
-        Err(_) => Err("KEYCHAIN_ERROR".to_string()),
+        Err(error) => Err(map_error(error)),
     }
 }
 
@@ -33,6 +38,6 @@ pub fn has_api_key() -> Result<bool, String> {
 pub fn clear_api_key() -> Result<(), String> {
     match entry().and_then(|entry| entry.delete_credential()) {
         Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-        Err(_) => Err("KEYCHAIN_ERROR".to_string()),
+        Err(error) => Err(map_error(error)),
     }
 }

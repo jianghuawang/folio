@@ -1,7 +1,7 @@
 [package]
 name = "folio"
 version = "0.1.0"
-description = "Folio macOS ePub reader"
+description = "Folio desktop ePub reader"
 authors = ["Folio"]
 edition = "2021"
 
@@ -13,7 +13,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "~2.5.0", features = [] }
 
 [dependencies]
-keyring = { version = "~3.3.0", features = ["apple-native"] }
+image = "~0.25.0"
+keyring = { version = "~3.3.0", features = ["apple-native", "windows-native"] }
 minidom = "~0.15.2"
 quick-xml = { version = "~0.36.0", features = ["serialize"] }
 reqwest = { version = "~0.12.0", default-features = false, features = ["json", "rustls-tls"] }
@@ -25,4 +26,5 @@ sha2 = "~0.10.0"
 tauri = { version = "~2.10.0", features = ["protocol-asset"] }
 tauri-plugin-dialog = "~2.6.0"
 tokio = { version = "~1.40.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
+uuid = { version = "~1.11.0", features = ["v4"] }
 zip = "~2.3.0"

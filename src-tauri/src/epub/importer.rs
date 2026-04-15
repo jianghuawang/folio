@@ -2,22 +2,22 @@ use std::{
     fs::{self, File},
     io::Read,
     path::{Component, Path, PathBuf},
-    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use image::ImageFormat;
 use minidom::Element;
 use quick_xml::{events::Event, Reader};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+use uuid::Uuid;
 use zip::ZipArchive;
 
-use crate::db::APP_SUPPORT_DIRECTORY;
+use crate::platform::paths;
 
 const CONTAINER_PATH: &str = "META-INF/container.xml";
 const PACKAGE_NS: &str = "http://www.idpf.org/2007/opf";
 const DC_NS: &str = "http://purl.org/dc/elements/1.1/";
-const BOOKS_DIRECTORY: &str = "Books";
 const COVERS_DIRECTORY: &str = "Covers";
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
@@ -84,6 +84,12 @@ impl From<quick_xml::Error> for ImporterError {
     }
 }
 
+impl From<image::ImageError> for ImporterError {
+    fn from(error: image::ImageError) -> Self {
+        Self::new(error.to_string())
+    }
+}
+
 pub fn compute_file_hash(source_path: &Path) -> Result<String, ImporterError> {
     let mut file = File::open(source_path)?;
     let mut hasher = Sha256::new();
@@ -107,7 +113,7 @@ pub fn create_managed_copy(
     file_hash: String,
 ) -> Result<ManagedBookCopy, ImporterError> {
     let book_id = generate_uuid_v4()?;
-    let books_directory = resolve_app_support_directory(app)?.join(BOOKS_DIRECTORY);
+    let books_directory = paths::books_dir(app).map_err(ImporterError::new)?;
 
     fs::create_dir_all(&books_directory)?;
 
@@ -274,11 +280,7 @@ fn extract_cover_image(
         return Ok(Some(cover_path));
     }
 
-    let Some(extension) = infer_image_extension(&cover_reference) else {
-        return Ok(None);
-    };
-
-    if convert_cover_to_png(book_id, &cover_bytes, extension, &cover_path).is_ok() {
+    if convert_cover_to_png(&cover_bytes, &cover_path).is_ok() {
         return Ok(Some(cover_path));
     }
 
@@ -327,7 +329,6 @@ fn find_cover_reference(opf_document: &Element) -> Option<CoverReference> {
 
     Some(CoverReference {
         href: cover_item.attr("href")?.to_string(),
-        media_type: cover_item.attr("media-type").map(str::to_owned),
     })
 }
 
@@ -375,97 +376,14 @@ fn normalize_zip_path(path: PathBuf) -> String {
     segments.join("/")
 }
 
-fn infer_image_extension(cover_reference: &CoverReference) -> Option<&'static str> {
-    if let Some(media_type) = cover_reference.media_type.as_deref() {
-        match media_type {
-            "image/jpeg" => return Some("jpg"),
-            "image/png" => return Some("png"),
-            "image/gif" => return Some("gif"),
-            "image/webp" => return Some("webp"),
-            _ => {}
-        }
-    }
-
-    Path::new(&cover_reference.href)
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|extension| match extension.to_ascii_lowercase().as_str() {
-            "jpeg" => "jpg",
-            "jpg" => "jpg",
-            "png" => "png",
-            "gif" => "gif",
-            "webp" => "webp",
-            _ => "",
-        })
-        .filter(|extension| !extension.is_empty())
-}
-
-fn convert_cover_to_png(
-    book_id: &str,
-    cover_bytes: &[u8],
-    extension: &str,
-    output_path: &Path,
-) -> Result<(), ImporterError> {
-    let temp_path = std::env::temp_dir().join(format!("folio-cover-{book_id}.{extension}"));
-    fs::write(&temp_path, cover_bytes)?;
-
-    let status = Command::new("sips")
-        .arg("-s")
-        .arg("format")
-        .arg("png")
-        .arg(&temp_path)
-        .arg("--out")
-        .arg(output_path)
-        .status();
-
-    let _ = fs::remove_file(&temp_path);
-
-    match status {
-        Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(ImporterError::new("Failed to convert cover image to PNG")),
-        Err(error) => Err(ImporterError::new(error.to_string())),
-    }
-}
-
-fn resolve_app_support_directory(app: &AppHandle) -> Result<PathBuf, ImporterError> {
-    let home_directory = app
-        .path()
-        .home_dir()
-        .map_err(|error| ImporterError::new(error.to_string()))?;
-
-    Ok(home_directory
-        .join("Library")
-        .join("Application Support")
-        .join(APP_SUPPORT_DIRECTORY))
+fn convert_cover_to_png(cover_bytes: &[u8], output_path: &Path) -> Result<(), ImporterError> {
+    let cover_image = image::load_from_memory(cover_bytes)?;
+    cover_image.save_with_format(output_path, ImageFormat::Png)?;
+    Ok(())
 }
 
 fn generate_uuid_v4() -> Result<String, ImporterError> {
-    let mut random = File::open("/dev/urandom")?;
-    let mut bytes = [0_u8; 16];
-    random.read_exact(&mut bytes)?;
-
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-    Ok(format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0],
-        bytes[1],
-        bytes[2],
-        bytes[3],
-        bytes[4],
-        bytes[5],
-        bytes[6],
-        bytes[7],
-        bytes[8],
-        bytes[9],
-        bytes[10],
-        bytes[11],
-        bytes[12],
-        bytes[13],
-        bytes[14],
-        bytes[15],
-    ))
+    Ok(Uuid::new_v4().to_string())
 }
 
 fn now_unix_timestamp() -> i64 {
@@ -484,5 +402,4 @@ struct EpubMetadata {
 #[derive(Debug)]
 struct CoverReference {
     href: String,
-    media_type: Option<String>,
 }

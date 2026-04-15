@@ -1,11 +1,8 @@
-use std::{
-    fs::File,
-    io::Read,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Row;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub mod client;
 pub mod worker;
@@ -218,32 +215,7 @@ pub fn serialize_paragraph_locators(locators: &[ParagraphLocator]) -> Result<Str
 }
 
 pub fn generate_uuid_v4() -> std::io::Result<String> {
-    let mut random = File::open("/dev/urandom")?;
-    let mut bytes = [0_u8; 16];
-    random.read_exact(&mut bytes)?;
-
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-    Ok(format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0],
-        bytes[1],
-        bytes[2],
-        bytes[3],
-        bytes[4],
-        bytes[5],
-        bytes[6],
-        bytes[7],
-        bytes[8],
-        bytes[9],
-        bytes[10],
-        bytes[11],
-        bytes[12],
-        bytes[13],
-        bytes[14],
-        bytes[15],
-    ))
+    Ok(Uuid::new_v4().to_string())
 }
 
 pub fn now_unix_timestamp() -> i64 {

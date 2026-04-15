@@ -142,7 +142,7 @@ export default function SettingsWindow() {
                       const { data } = await refetchApiKeyStatus();
                       if (!data?.configured) {
                         throw new FolioError(
-                          "KEYCHAIN_ERROR",
+                          "SECURE_STORAGE_ERROR",
                           "API key could not be verified after saving.",
                         );
                       }

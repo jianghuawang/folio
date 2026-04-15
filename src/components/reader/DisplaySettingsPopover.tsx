@@ -6,13 +6,13 @@ import type { ReadingSettings, ReadingSettingsUpdate } from "@/types/settings";
 
 const FONT_FAMILY_OPTIONS = [
   { label: "Georgia", value: "Georgia" },
-  { label: "San Francisco", value: "system-ui" },
+  { label: "System Sans", value: "system-ui" },
   { label: "Palatino", value: "Palatino" },
-  { label: "Menlo", value: "Menlo" },
+  { label: "Monospace", value: "Menlo" },
 ] as const;
 
 const LINE_HEIGHT_OPTIONS = [
-  { label: "Tight (1.4)", value: 1.4 },
+  { label: "Compact (1.4)", value: 1.4 },
   { label: "Normal (1.6)", value: 1.6 },
   { label: "Relaxed (1.9)", value: 1.9 },
 ] as const;
