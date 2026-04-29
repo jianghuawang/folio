@@ -23,7 +23,7 @@ import type {
   TranslationPausedEvent,
   TranslationProgressEvent,
 } from "@/types/events";
-import type { TranslationJob } from "@/types/translation";
+import type { Translation, TranslationJob } from "@/types/translation";
 
 const TRANSLATION_LANGUAGES = [
   "English",
@@ -63,6 +63,9 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const setBilingualMode = useReaderStore((state) => state.setBilingualMode);
   const setCurrentLanguage = useReaderStore((state) => state.setCurrentLanguage);
   const activeJobIdRef = useRef<string | null>(null);
+  const resolvedTargetLanguageRef = useRef<string | null>(null);
+  const pendingTranslationsRefreshRef = useRef<Promise<void> | null>(null);
+  const queuedTranslationsRefreshLanguageRef = useRef<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [progressEvent, setProgressEvent] = useState<TranslationProgressEvent | null>(null);
   const [pausedEvent, setPausedEvent] = useState<TranslationPausedEvent | null>(null);
@@ -104,8 +107,76 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         return;
       }
 
+      resolvedTargetLanguageRef.current = job.target_language;
       queryClient.setQueryData(["translation-language", bookId], job.target_language);
       queryClient.setQueryData(["translation-job", bookId, job.target_language], job);
+    },
+    [bookId, queryClient],
+  );
+
+  const cacheProgress = useCallback(
+    (event: TranslationProgressEvent, language: string | null) => {
+      if (!bookId || !language) {
+        return;
+      }
+
+      queryClient.setQueryData<TranslationJob | null>(
+        ["translation-job", bookId, language],
+        (currentJob) => {
+          if (!currentJob || currentJob.id !== event.job_id) {
+            return currentJob;
+          }
+
+          return {
+            ...currentJob,
+            completed_paragraphs: Math.max(currentJob.completed_paragraphs, event.completed),
+            pause_reason: null,
+            status: "in_progress",
+            total_paragraphs: event.total,
+            updated_at: Math.floor(Date.now() / 1000),
+          };
+        },
+      );
+    },
+    [bookId, queryClient],
+  );
+
+  const refreshTranslationsFromDb = useCallback(
+    (language: string | null) => {
+      if (!bookId || !language) {
+        return;
+      }
+
+      queuedTranslationsRefreshLanguageRef.current = language;
+
+      if (pendingTranslationsRefreshRef.current) {
+        return;
+      }
+
+      const refreshPromise = (async () => {
+        while (queuedTranslationsRefreshLanguageRef.current) {
+          const nextLanguage = queuedTranslationsRefreshLanguageRef.current;
+          queuedTranslationsRefreshLanguageRef.current = null;
+
+          const translations = await getTranslations(bookId, nextLanguage);
+          queryClient.setQueryData<Translation[]>(
+            ["translations", bookId, nextLanguage],
+            translations,
+          );
+          queryClient.setQueryData(["translation-language", bookId], nextLanguage);
+        }
+      })()
+        .catch(() => {
+          void queryClient.invalidateQueries({ queryKey: ["translations", bookId, language] });
+        })
+        .finally(() => {
+          pendingTranslationsRefreshRef.current = null;
+          if (queuedTranslationsRefreshLanguageRef.current) {
+            refreshTranslationsFromDb(queuedTranslationsRefreshLanguageRef.current);
+          }
+        });
+
+      pendingTranslationsRefreshRef.current = refreshPromise;
     },
     [bookId, queryClient],
   );
@@ -113,6 +184,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const activateLanguage = useCallback(
     async (language: string) => {
       setStartError(null);
+      resolvedTargetLanguageRef.current = language;
       setCurrentLanguage(language);
       setBilingualMode(true);
       await invalidateTranslationQueries(language);
@@ -136,6 +208,10 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   });
 
   const resolvedTargetLanguage = currentLanguage ?? availableLanguageQuery.data ?? null;
+
+  useEffect(() => {
+    resolvedTargetLanguageRef.current = resolvedTargetLanguage;
+  }, [resolvedTargetLanguage]);
 
   const jobQuery = useQuery({
     queryKey: ["translation-job", bookId, resolvedTargetLanguage],
@@ -224,8 +300,10 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
             return;
           }
 
+          const language = resolvedTargetLanguageRef.current;
           setProgressEvent(event.payload);
-          void invalidateTranslationQueries(resolvedTargetLanguage);
+          cacheProgress(event.payload, language);
+          refreshTranslationsFromDb(language);
         },
       );
 
@@ -237,7 +315,9 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
             return;
           }
 
-          void invalidateTranslationQueries(resolvedTargetLanguage);
+          const language = resolvedTargetLanguageRef.current;
+          refreshTranslationsFromDb(language);
+          void invalidateTranslationQueries(language);
         },
       );
 
@@ -248,7 +328,9 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         }
 
         setLatestError(event.payload);
-        void invalidateTranslationQueries(resolvedTargetLanguage);
+        const language = resolvedTargetLanguageRef.current;
+        refreshTranslationsFromDb(language);
+        void invalidateTranslationQueries(language);
       });
 
       const unlistenPaused = await listen<TranslationPausedEvent>("translation:paused", (event) => {
@@ -258,7 +340,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
         }
 
         setPausedEvent(event.payload);
-        void invalidateTranslationQueries(resolvedTargetLanguage);
+        void invalidateTranslationQueries(resolvedTargetLanguageRef.current);
       });
 
       const unlistenExportProgress = await listen<ExportProgressEvent>("export:progress", (event) => {
@@ -286,7 +368,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
       active = false;
       cleanup?.();
     };
-  }, [bookId, invalidateTranslationQueries, resolvedTargetLanguage]);
+  }, [bookId, cacheProgress, invalidateTranslationQueries, refreshTranslationsFromDb]);
 
   const startMutation = useMutation({
     mutationFn: (payload: { language: string; replaceExisting?: boolean }) =>

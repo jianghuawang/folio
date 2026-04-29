@@ -1302,6 +1302,7 @@ export async function createEpubBridge({
         return;
       }
 
+      const modeChanged = enabled !== bilingualModeEnabled;
       lastAppliedTranslationSignature = nextSignature;
       bilingualModeEnabled = enabled;
       currentTranslations = new Map(
@@ -1311,7 +1312,12 @@ export async function createEpubBridge({
         ]),
       );
 
-      void refreshCurrentView().catch(() => undefined);
+      if (modeChanged) {
+        void refreshCurrentView().catch(() => undefined);
+        return;
+      }
+
+      applyTranslations();
     },
   };
 
