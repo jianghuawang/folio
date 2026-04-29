@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -91,9 +90,24 @@ function getLegacyNoteOnlyHighlight(note: Note, highlightById: Map<string, Highl
   return null;
 }
 
+const READER_WINDOW_LABEL_PREFIX = "reader-";
+
+function resolveBookIdFromWindowLabel(): string | null {
+  try {
+    const label = getCurrentWindow().label;
+    if (label.startsWith(READER_WINDOW_LABEL_PREFIX)) {
+      const candidate = label.slice(READER_WINDOW_LABEL_PREFIX.length);
+      return candidate.length > 0 ? candidate : null;
+    }
+  } catch {
+    // getCurrentWindow may throw if invoked outside a Tauri context; fall through.
+  }
+
+  return null;
+}
+
 export default function ReaderWindow() {
-  const [searchParams] = useSearchParams();
-  const bookId = searchParams.get("bookId");
+  const bookId = useMemo(() => resolveBookIdFromWindowLabel(), []);
   const { data: book, error, isLoading, refetch } = useBook(bookId);
   const readingSettingsQuery = useReadingSettings(bookId);
   const updateReadingSettingsMutation = useUpdateReadingSettings(bookId);
@@ -569,7 +583,7 @@ export default function ReaderWindow() {
   }, [closeNoteEditor, noteEditor, selection]);
 
   if (!bookId) {
-    return <FullScreenError message="Missing required ?bookId query parameter." />;
+    return <FullScreenError message="Reader window is missing a book reference." />;
   }
 
   if (isLoading || readingSettingsQuery.isLoading) {

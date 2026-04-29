@@ -33,6 +33,8 @@ pub fn open_reader_window<R: Runtime>(
     state: State<'_, AppState>,
     book_id: String,
 ) -> Result<(), String> {
+    eprintln!("[reader] open_reader_window requested for book_id={book_id}");
+
     let book_title = {
         let connection = state
             .db
@@ -62,16 +64,18 @@ pub fn open_reader_window<R: Runtime>(
     let window_label = format!("reader-{book_id}");
 
     if let Some(window) = app.get_webview_window(&window_label) {
+        eprintln!("[reader] focusing existing window label={window_label}");
         window.unminimize().map_err(|error| error.to_string())?;
         window.show().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
         return Ok(());
     }
 
+    eprintln!("[reader] building new window label={window_label}");
     let window = WebviewWindowBuilder::new(
         &app,
         window_label.clone(),
-        WebviewUrl::App(format!("/reader?bookId={book_id}").into()),
+        WebviewUrl::App("/reader".into()),
     )
     .title(format!("{book_title} — Folio"))
     .inner_size(900.0, 700.0)
@@ -79,14 +83,26 @@ pub fn open_reader_window<R: Runtime>(
     .center()
     .visible(false)
     .build()
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| {
+        eprintln!("[reader] build() failed: {error}");
+        error.to_string()
+    })?;
 
     let window_state_key = window_state_key_for_reader(&book_id);
-    restore_window_state(&window, state.inner(), &window_state_key)
-        .map_err(|error| error.to_string())?;
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())?;
+    if let Err(error) = restore_window_state(&window, state.inner(), &window_state_key) {
+        eprintln!("[reader] restore_window_state failed: {error}");
+        return Err(error);
+    }
+    window.show().map_err(|error| {
+        eprintln!("[reader] show() failed: {error}");
+        error.to_string()
+    })?;
+    window.set_focus().map_err(|error| {
+        eprintln!("[reader] set_focus() failed: {error}");
+        error.to_string()
+    })?;
 
+    eprintln!("[reader] open_reader_window completed label={window_label}");
     Ok(())
 }
 
