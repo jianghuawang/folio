@@ -1,10 +1,10 @@
-# PRD: Folio — macOS ePub Reader (Tauri)
+# PRD: Folio — Desktop ePub Reader (Tauri)
 
 ---
 
 ## 1. Product Overview
 
-Folio is a native macOS desktop application built with Tauri that lets users read ePub books from a personal local library. It solves the limitations of the default macOS Books app by adding LLM-powered bilingual translation, rich text annotation (highlights + notes), and a quote-cover image generator — while preserving the clean, familiar Books aesthetic. The target user is a heavy reader who consumes foreign-language or English books and wants annotation and translation tools inside a polished native reader.
+Folio is a native desktop application for macOS and Windows built with Tauri that lets users read ePub books from a personal local library. It adds LLM-powered bilingual translation, rich text annotation (highlights + notes), and a quote-cover image generator while preserving a clean, Books-inspired reading aesthetic. The target user is a heavy reader who consumes foreign-language or English books and wants annotation and translation tools inside a polished native reader.
 
 **Core user journey:**
 1. User launches app → sees Library window (bookshelf grid)
@@ -19,7 +19,7 @@ Folio is a native macOS desktop application built with Tauri that lets users rea
 ## 2. User Roles & Permissions
 
 ### 2.1 Single User (Local, No Auth)
-There is exactly one role. The app has no authentication, no cloud sync, and no multi-user concept. All data is local to the macOS user account.
+There is exactly one role. The app has no authentication, no cloud sync, and no multi-user concept. All data is local to the current desktop user account.
 
 | Capability | Allowed |
 |---|---|
@@ -67,9 +67,9 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **User story:** As a user, I can import ePub files into my library so that I can read them in Folio.
 
 **Acceptance criteria:**
-- ✓ Toolbar button "Import Book" opens macOS native file picker filtered to `.epub` files; supports multi-select
-- ✓ User can drag one or more `.epub` files from Finder onto the library window to import
-- ✓ On import: Folio copies the file to `~/Library/Application Support/Folio/Books/{book_id}.epub`, extracts metadata (title, author, cover image) from the ePub manifest, and stores metadata in local SQLite database
+- ✓ Toolbar button "Import Book" opens the native file picker filtered to `.epub` files; supports multi-select
+- ✓ User can drag one or more `.epub` files from the system file manager onto the library window to import
+- ✓ On import: Folio copies the file to its managed per-user data directory (`~/Library/Application Support/Folio/Books/{book_id}.epub` on macOS; `%LOCALAPPDATA%\Folio\Books\{book_id}.epub` on Windows), extracts metadata (title, author, cover image) from the ePub manifest, and stores metadata in local SQLite database
 - ✓ Duplicate detection: if a file with identical SHA-256 hash already exists in the library, import is skipped and a non-blocking banner appears at top of Library: "'{title}' is already in your library." (auto-dismisses after 4 seconds)
 - ✓ After import, newly added book(s) appear at the top of the grid immediately (no reload required)
 - ✓ A progress indicator (indeterminate spinner in toolbar) shows during import of large files (>20 MB)
@@ -85,7 +85,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **User story:** As a user, I can open each book in its own dedicated window so that I can read multiple books side by side.
 
 **Acceptance criteria:**
-- ✓ Double-clicking a book card opens a new macOS window (separate `WebviewWindow` in Tauri) for that book
+- ✓ Double-clicking a book card opens a new desktop window (separate `WebviewWindow` in Tauri) for that book
 - ✓ If a Reader window for that book is already open, it is brought to front (not opened again)
 - ✓ Each Reader window is independently resizable (minimum 600×500)
 - ✓ Reader window title bar shows: "{Book Title} — Folio"
@@ -222,7 +222,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 - ✓ Canceling stops translation; already-translated paragraphs remain in the database and display in bilingual mode
 - ✓ Translation state persists across app restarts: if translation was in progress when the app quit, the job is restored in a paused state; on the next open of that book, the reader prompts: "Continue translating '{title}'?" [Continue] [Stop]
 - ✓ Toolbar shows "Bilingual: ON" toggle when translation data exists; toggling switches between original-only and bilingual display (translation data is not deleted)
-- ✓ "Export Bilingual ePub" button in toolbar (only shown when translation is 100% complete): generates a new `.epub` file with interleaved paragraphs, opens macOS Save dialog defaulting to `~/Desktop/{title}_bilingual.epub`
+- ✓ "Export Bilingual ePub" button in toolbar (only shown when translation is 100% complete): generates a new `.epub` file with interleaved paragraphs, opens the native Save dialog defaulting to the user's Desktop as `{title}_bilingual.epub`
 
 **Edge cases:**
 - LLM API returns an error for a paragraph → that paragraph is skipped (original only shown); a small warning icon appears in the progress banner: "3 paragraphs could not be translated. [LINK: Retry Failed]"
@@ -249,7 +249,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
   - Author name: displayed below book title, italic, 12px, 50% opacity
   - Folio watermark: "Made with Folio" in bottom-right, 10px, 30% opacity
 - ✓ Right panel controls: theme swatches (5 colors), a "Quote Text" editable textarea (pre-filled with selected text, user can edit), and a "Save Image" button (blue primary, full width at bottom)
-- ✓ Clicking "Save Image" renders the cover to a 1080×1080 PNG using an offscreen HTML5 Canvas, opens macOS Save dialog defaulting to `~/Desktop/{book_title}_quote.png`
+- ✓ Clicking "Save Image" renders the cover to a 1080×1080 PNG using an offscreen HTML5 Canvas, opens the native Save dialog defaulting to the user's Desktop as `{book_title}_quote.png`
 - ✓ A "Cancel" button (gray, secondary) closes the modal without saving
 - ✓ Live preview updates in real time as user edits the quote text or changes the theme
 
@@ -265,7 +265,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **User story:** As a user, I can search my library by title or author so that I can quickly find a specific book.
 
 **Acceptance criteria:**
-- ✓ Search bar is always visible at the top of the Library window (macOS-style, pill-shaped, 220px wide)
+- ✓ Search bar is always visible at the top of the Library window (pill-shaped, 220px wide)
 - ✓ Search filters the book grid in real time as user types (no submit required), with 150ms debounce
 - ✓ Search matches title (substring, case-insensitive) and author (substring, case-insensitive)
 - ✓ Matching is client-side (SQLite query on local metadata)
@@ -287,7 +287,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 - ✓ Settings popover is fully opaque. Reader text must never show through the panel or its control rows.
 - ✓ Controls in popover:
   - Font Size: "A−" [BUTTON] · {size}px · "A+" [BUTTON]; range 12–32px, step 2px
-  - Font: [DROPDOWN] Georgia (serif) | San Francisco (sans-serif) | Palatino (serif) | Menlo (monospace)
+  - Font: [DROPDOWN] Georgia (serif) | System Sans (sans-serif) | Palatino (serif) | Monospace
   - Line Height: [DROPDOWN] Compact (1.4) | Normal (1.6) | Relaxed (1.9)
   - Theme: three swatches — Light, Sepia, Dark
 - ✓ Changes apply instantly to the current page without page reload
@@ -303,7 +303,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **User story:** As a user, I can configure my OpenRouter API key and translation model so that bilingual translation features work.
 
 **Acceptance criteria:**
-- ✓ Settings window opened via macOS menu "Folio > Settings…" (⌘,); opens as a standard macOS settings window (separate `WebviewWindow`, 560×400px, not resizable)
+- ✓ Settings window opened via the native app menu (`Folio > Settings…` with `⌘,` on macOS; `File > Settings` with `Ctrl+,` on Windows); opens as a separate `WebviewWindow`, 560×400px, not resizable
 - ✓ Settings window has two tabs: "General" and "Translation"
 - ✓ General tab: (reserved for future use; shows "No general settings yet.")
 - ✓ Translation tab:
@@ -311,9 +311,9 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
   - "OpenRouter API Key" [INPUT, password masked] with "Show" toggle; the field is blank on open, and entering a value replaces the stored key
   - "Model" [INPUT text]: pre-filled with `google/gemini-2.5-flash-lite-preview`
   - "Test Connection" [BUTTON, secondary]: sends a minimal OpenRouter test request (translate "Hello" to English) using the current unsaved API key value if present, otherwise the already-saved key; shows "✓ Connection successful" or "✗ Error: {message}" inline
-  - "Save" [BUTTON, blue primary] saves the API key to macOS Keychain (if a new value was entered) and saves the selected model to SQLite
-  - "Clear Saved Key" [LINK] removes the stored API key from macOS Keychain after confirmation
-- ✓ API key is stored in macOS Keychain, not in SQLite
+  - "Save" [BUTTON, blue primary] saves the API key to native secure storage (if a new value was entered) and saves the selected model to SQLite
+  - "Clear Saved Key" [LINK] removes the stored API key from native secure storage after confirmation
+- ✓ API key is stored in native secure storage, not in SQLite
 - ✓ The selected OpenRouter model is stored in the `app_settings` table in SQLite
 
 **Edge cases:**
@@ -456,11 +456,11 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 ## 5b. Interface Design — ASCII Wireframes
 
-> Folio's UI mirrors the macOS Books app aesthetic: dark sidebar with translucent sections, book grid with cover thumbnails and progress badges, and a clean two-column reader with persistent top reader controls and persistent page chevrons.
+> Folio's UI preserves the same dark, Books-inspired desktop aesthetic on both macOS and Windows: dark sidebar with translucent sections, book grid with cover thumbnails and progress badges, and a clean two-column reader with persistent top reader controls and persistent page chevrons. The `● ● ●` marks in the wireframes below are abstract placeholders for native window controls, not literal UI elements.
 
 ---
 
-### Library Window — Default State (macOS Books style)
+### Library Window — Default State (Books-Inspired Desktop Style)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -607,7 +607,7 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> The top menu clusters and `<` `>` page chevrons remain visible at all times while reading. Page bottom shows chapter title and progress percentage. Two-column layout mirrors macOS Books.
+> The top menu clusters and `<` `>` page chevrons remain visible at all times while reading. Page bottom shows chapter title and progress percentage. Two-column layout preserves the same Books-inspired reading feel on both supported desktop platforms.
 
 **Toolbar button legend:**
 ```
@@ -915,7 +915,7 @@ Left cluster:                           Right cluster:
 
 ## 6. Data & State Requirements
 
-### 6.1 Persisted Data (SQLite at `~/Library/Application Support/Folio/folio.db`)
+### 6.1 Persisted Data (SQLite in Folio's managed app data directory: `~/Library/Application Support/Folio/folio.db` on macOS, `%LOCALAPPDATA%\Folio\folio.db` on Windows)
 
 **`books` table**
 | Column | Type | Notes |
@@ -923,7 +923,7 @@ Left cluster:                           Right cluster:
 | id | TEXT (UUID) | Primary key |
 | title | TEXT | Extracted from ePub metadata |
 | author | TEXT | Extracted from ePub metadata |
-| file_path | TEXT | Absolute path to Folio's managed copy within App Support/Books/ |
+| file_path | TEXT | Absolute path to Folio's managed copy within the per-user Folio data directory |
 | cover_image_path | TEXT | Extracted cover saved as PNG |
 | added_at | INTEGER | Unix timestamp |
 | last_read_at | INTEGER | Unix timestamp, null if never opened |
@@ -996,10 +996,10 @@ Left cluster:                           Right cluster:
 
 Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `window_state_{book_id}`
 
-**macOS Keychain**
+**Native Secure Storage**
 - Service name: `com.folio.app`
 - Account: `llm_api_key`
-- API key stored and retrieved by the Rust backend via macOS Keychain
+- API key stored and retrieved by the Rust backend via native secure storage (`Keychain` on macOS, `Credential Manager` on Windows)
 
 ### 6.2 Temporary / In-Memory State
 
@@ -1040,7 +1040,7 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 | Importing large epub (>20 MB) | Indeterminate spinner in Library toolbar; book card appears with shimmer placeholder until processing completes |
 | Testing API connection | "Test Connection" button shows spinner and is disabled; result appears inline after response |
 | Exporting bilingual epub | Progress dialog: "Generating bilingual ePub… {X}%" with cancel button |
-| Rendering quote cover (Save Image) | "Save Image" button shows spinner; macOS Save dialog opens after render (<2s) |
+| Rendering quote cover (Save Image) | "Save Image" button shows spinner; native Save dialog opens after render (<2s) |
 
 ### 7.3 Error States
 
@@ -1071,23 +1071,23 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 - Quote cover PNG generation (1080×1080): < 2 seconds
 
 ### 8.2 Security
-- API key stored in macOS Keychain only; never written to SQLite, log files, or environment variables
+- API key stored in native secure storage only; never written to SQLite, log files, or environment variables
 - LLM API calls made from Rust backend (not renderer webview) to avoid exposing API key in devtools
 - No user data leaves the device except OpenRouter translation API calls (paragraph text sent in chunked batches to the configured OpenRouter model)
 - OpenRouter-translated HTML is sanitized against a strict inline-tag allowlist before it is inserted into the reader DOM or exported
 - No telemetry, analytics, or crash reporting collected
-- ePub files stored in App Support directory with standard macOS file permissions (owner read/write only)
+- ePub files stored in Folio's per-user managed data directory with standard OS file permissions
 - Content Security Policy set on all webview windows to disallow inline scripts and external resource loads
 
 ### 8.3 Responsive Design
-- **Primary target:** macOS desktop, window width 800px–2560px
+- **Primary target:** desktop on macOS and Windows, window width 800px–2560px
 - Breakpoints:
   - ≥ 1000px: full sidebar + 4+ column grid
   - 700–999px: sidebar collapsible (hidden by default, toggled via ☰), 3-column grid
   - < 700px: sidebar hidden, 2-column grid, toolbar icons only (no labels)
 - Reader minimum window: 600×500px; at < 800px width, horizontal margins reduce to 40px
-- macOS native window controls (traffic lights) preserved; no custom titlebar
-- macOS system dark mode automatically mapped to reader Dark theme; user can override per-book
+- Native OS window controls preserved; no custom titlebar
+- Reader theme remains user-selectable per book
 
 ---
 
@@ -1109,7 +1109,7 @@ The following features will **not** be built:
 - Reading goals or streaks
 - Collections/custom bookshelves
 - iOS/iPadOS version
-- Windows or Linux version
+- Linux version
 - Printing
 - Text-to-speech
 - Side-by-side two-page layout (spread view)
@@ -1131,13 +1131,13 @@ The following features will **not** be built:
 | A4 | The "Translate" button in the selection popup bar is **not implemented in MVP** (only full-book translation exists); the button is present but shows a tooltip: "Select 'Translate Book' from the toolbar to translate the whole book" | The PRD describes full-book translation; single-paragraph inline translation is V2 |
 | A5 | LLM translation requests include the neighboring paragraphs already present in the same batch, but the model must return **one translated HTML fragment per paragraph** in a structured JSON array | Improves context quality without changing paragraph-level rendering or storage |
 | A6 | Quote cover dimensions are fixed at **1080×1080px** (square, Instagram-standard) | Most common share format; non-square is V2 |
-| A7 | The app has **no macOS menu bar items beyond standard** (Folio > About, Folio > Settings, Folio > Quit; standard Edit/View/Window/Help menus populated by Tauri defaults) | Keeps scope minimal |
+| A7 | The app has **no native menu items beyond standard** (macOS: Folio > About, Folio > Settings, Folio > Quit; Windows: File > Settings plus standard Edit/View/Window/Help menus populated by Tauri defaults) | Keeps scope minimal |
 | A8 | "Export Bilingual ePub" generates the ePub **in-process** (Rust backend assembles epub zip) rather than calling an external tool | Avoids runtime dependency on external binaries |
 | A9 | Reading position is saved as a **CFI string**, not a page number; the progress bar shows percentage which is derived from CFI offset | ePub pagination is viewport-dependent; CFI is the only stable position anchor |
-| A10 | The reader uses **paginated layout** (not scrolling), matching macOS Books app behavior | Specified by user; scroll mode is V2 |
-| A11 | Font families offered are: Georgia, San Francisco (system `-apple-system`), Palatino, Menlo — **these 4 only** in MVP | Broad enough variety without requiring font bundling |
+| A10 | The reader uses **paginated layout** (not scrolling), preserving the same Books-inspired reading behavior across platforms | Specified by user; scroll mode is V2 |
+| A11 | Font families offered are: Georgia, System Sans, Palatino, and Monospace — **these 4 only** in MVP | Broad enough variety without requiring platform-specific font bundling |
 | A12 | The "Folio watermark" on quote covers is **not removable** in MVP | Attribution / brand awareness |
 | A13 | Translation language list is **fixed** at the 10 languages listed in Feature 10 | Sufficient coverage for MVP; extensible list is V2 |
-| A14 | The app **does not support** the macOS Books app's existing library or iCloud Books — it is a completely separate library | No API exists to access the system Books library |
+| A14 | The app **does not support** any existing system ebook library (including macOS Books / iCloud Books) — it is a completely separate library | No supported system-library API exists for this product scope |
 | A15 | Window position memory is stored in `app_settings` as `window_state_library`, `window_state_settings`, and `window_state_{book_id}` JSON values | Covers all Folio windows with one persistence mechanism |
 | A16 | OpenRouter is the **only** translation provider in MVP | Keeps the implementation and settings surface aligned with the actual backend integration |
