@@ -249,11 +249,11 @@ fn insert_book(connection: &Connection, imported_book: &ImportedBookDraft) -> Re
                 imported_book.id,
                 imported_book.title,
                 imported_book.author,
-                imported_book.managed_path.to_string_lossy().into_owned(),
+                normalize_path_for_storage(&imported_book.managed_path),
                 imported_book
                     .cover_path
                     .as_ref()
-                    .map(|cover_path| cover_path.to_string_lossy().into_owned()),
+                    .map(|cover_path| normalize_path_for_storage(cover_path)),
                 imported_book.added_at,
                 imported_book.file_hash,
             ],
@@ -261,6 +261,15 @@ fn insert_book(connection: &Connection, imported_book: &ImportedBookDraft) -> Re
         .map_err(|error| error.to_string())?;
 
     Ok(())
+}
+
+fn normalize_path_for_storage(path: &Path) -> String {
+    let raw = path.to_string_lossy().into_owned();
+    if cfg!(target_os = "windows") {
+        raw.replace('\\', "/")
+    } else {
+        raw
+    }
 }
 
 fn get_book_record(connection: &Connection, book_id: &str) -> Result<Option<Book>, String> {
@@ -277,18 +286,29 @@ fn get_book_record(connection: &Connection, book_id: &str) -> Result<Option<Book
 }
 
 fn book_from_row(row: &Row<'_>) -> rusqlite::Result<Book> {
+    let file_path: String = row.get("file_path")?;
+    let cover_image_path: Option<String> = row.get("cover_image_path")?;
+
     Ok(Book {
         id: row.get("id")?,
         title: row.get("title")?,
         author: row.get("author")?,
-        file_path: row.get("file_path")?,
-        cover_image_path: row.get("cover_image_path")?,
+        file_path: normalize_stored_path(file_path),
+        cover_image_path: cover_image_path.map(normalize_stored_path),
         added_at: row.get("added_at")?,
         last_read_at: row.get("last_read_at")?,
         last_position_cfi: row.get("last_position_cfi")?,
         file_hash: row.get("file_hash")?,
         reading_progress: row.get("reading_progress")?,
     })
+}
+
+fn normalize_stored_path(path: String) -> String {
+    if cfg!(target_os = "windows") {
+        path.replace('\\', "/")
+    } else {
+        path
+    }
 }
 
 fn emit_import_progress(app: &AppHandle, filename: &str, status: &'static str) {
