@@ -112,6 +112,7 @@ const NOTE_MARKER_SIZE_PX = 7;
 const NOTE_MARKER_LAYER_ATTRIBUTE = "data-folio-note-marker-layer";
 const NOTE_MARKER_ATTRIBUTE = "data-folio-note-marker";
 const NOTE_MARKER_DEFAULT_COLOR = "#FFD60A";
+const TRANSLATION_CFI_IGNORE_CLASS = "folio-translation";
 
 const FONT_STACKS: Record<ReadingFontFamily, string> = {
   Georgia: "Georgia, serif",
@@ -541,6 +542,121 @@ function clearInjectedTranslations(contents: Contents) {
   contents.document
     .querySelectorAll<HTMLElement>("[data-folio-translation='true']")
     .forEach((node) => node.remove());
+}
+
+function isInsideTranslation(node: Node | null): boolean {
+  let current: Node | null = node;
+  while (current && current.nodeType !== 9 /* DOCUMENT_NODE */) {
+    if (
+      current.nodeType === 1 &&
+      (current as Element).classList?.contains(TRANSLATION_CFI_IGNORE_CLASS)
+    ) {
+      return true;
+    }
+    current = current.parentNode;
+  }
+  return false;
+}
+
+function normalizeMatchText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function patchContentsCfiResolution(
+  contents: Contents,
+  getExpectedText: (cfi: string) => string | undefined,
+) {
+  const patchedContents = contents as Contents & { folioCfiPatchApplied?: boolean };
+  if (patchedContents.folioCfiPatchApplied) {
+    return;
+  }
+
+  const originalRange = contents.range.bind(contents);
+  const originalCfiFromRange = contents.cfiFromRange.bind(contents);
+
+  // epub.js's walkToNode() honors ignoreClass for text-node steps but not for
+  // element-step traversal — it does children[step.index] without filtering.
+  // That means a CFI generated against the original DOM can't be resolved
+  // once translation paragraphs are interleaved as siblings, and vice versa.
+  // Detach translation siblings while computing/resolving the CFI so both
+  // directions operate on the canonical (translation-free) DOM. The Range
+  // we hand back keeps node references that remain valid after re-insertion,
+  // so getClientRects() runs against the live bilingual layout.
+  const withoutTranslations = <T,>(callback: () => T): T => {
+    const removed: Array<{ node: Node; parent: Node; nextSibling: Node | null }> = [];
+    contents.document
+      .querySelectorAll<HTMLElement>(`.${TRANSLATION_CFI_IGNORE_CLASS}`)
+      .forEach((node) => {
+        const parent = node.parentNode;
+        if (!parent) {
+          return;
+        }
+        removed.push({ node, parent, nextSibling: node.nextSibling });
+        parent.removeChild(node);
+      });
+
+    try {
+      return callback();
+    } finally {
+      removed.forEach(({ node, parent, nextSibling }) => {
+        if (nextSibling && nextSibling.parentNode === parent) {
+          parent.insertBefore(node, nextSibling);
+        } else {
+          parent.appendChild(node);
+        }
+      });
+    }
+  };
+
+  const emptyRange = () => {
+    const range = contents.document.createRange();
+    const anchor = contents.document.body ?? contents.document.documentElement;
+    if (anchor) {
+      range.setStart(anchor, 0);
+      range.collapse(true);
+    }
+    return range;
+  };
+
+  patchedContents.range = (cfi: string) => {
+    const canonical = withoutTranslations(() => originalRange(cfi));
+    const expected = getExpectedText(cfi);
+    if (!expected) {
+      return canonical;
+    }
+
+    const target = normalizeMatchText(expected);
+    if (canonical && normalizeMatchText(canonical.toString()) === target) {
+      return canonical;
+    }
+
+    // CFI was created against the live bilingual DOM (e.g., highlight on a
+    // translated paragraph). Resolve without detaching translations.
+    const live = originalRange(cfi);
+    if (live && normalizeMatchText(live.toString()) === target) {
+      return live;
+    }
+
+    // Neither resolution matches the saved excerpt — typically a translation
+    // highlight while bilingual is off, or a stale CFI. Return a collapsed
+    // range so the highlight pane renders nothing instead of attaching to
+    // unrelated content.
+    return emptyRange();
+  };
+
+  patchedContents.cfiFromRange = (range: Range) => {
+    if (
+      isInsideTranslation(range.startContainer) ||
+      isInsideTranslation(range.endContainer)
+    ) {
+      // Selection lives inside an injected translation paragraph; that node
+      // only exists in the live DOM, so the CFI must reference it directly.
+      return originalCfiFromRange(range);
+    }
+    return withoutTranslations(() => originalCfiFromRange(range));
+  };
+
+  patchedContents.folioCfiPatchApplied = true;
 }
 
 function clampSelectionCoordinate(value: number, min: number, max: number) {
@@ -1047,7 +1163,23 @@ export async function createEpubBridge({
     });
   };
 
+  const getExpectedTextForCfi = (cfi: string): string | undefined => {
+    for (const highlight of currentHighlights) {
+      if (highlight.cfi_range === cfi) {
+        return highlight.text_excerpt;
+      }
+    }
+    for (const note of currentNotes) {
+      if (note.cfi === cfi) {
+        return note.text_excerpt;
+      }
+    }
+    return undefined;
+  };
+
   rendition.hooks.content.register((contents: Contents) => {
+    patchContentsCfiResolution(contents, getExpectedTextForCfi);
+
     let lastSelectionSnapshot: ReaderSelectionSnapshot | null = null;
     let lastSelectedCfiRange: { timestamp: number; value: string } | null = null;
     let selectionSyncTimeout: number | null = null;
@@ -1073,22 +1205,25 @@ export async function createEpubBridge({
       return isFreshSelectionSnapshot(lastSelectionSnapshot) ? lastSelectionSnapshot : null;
     };
 
-    const handleContentsSelected = (cfiRange: string) => {
-      lastSelectedCfiRange = {
-        timestamp: Date.now(),
-        value: cfiRange,
-      };
-
-      // Use a small delay to ensure the browser selection is fully materialized
-      // before we try to capture it. The "selected" event can fire before
-      // getSelection() returns the new selection in some cases.
+    const handleContentsSelected = (_cfiRange: string) => {
+      // Ignore the cfi epub.js hands us — its triggerSelectedEvent builds the
+      // CFI via `new EpubCFI(range, cfiBase)` directly, bypassing the patched
+      // cfiFromRange that detaches translations. Re-derive from the live
+      // snapshot so highlights generated in bilingual mode survive a toggle.
       window.setTimeout(() => {
         const selectionSnapshot = getSelectionSnapshot();
         if (!selectionSnapshot) {
           return;
         }
 
-        emitSelection(cfiRange, contents, selectionSnapshot);
+        try {
+          const cfiRange = contents.cfiFromRange(selectionSnapshot.range);
+          lastSelectedCfiRange = {
+            timestamp: Date.now(),
+            value: cfiRange,
+          };
+          emitSelection(cfiRange, contents, selectionSnapshot);
+        } catch {}
       }, 0);
     };
 
@@ -1181,6 +1316,10 @@ export async function createEpubBridge({
       contents.document.documentElement,
       wheelNavigationHandler.handleWheel,
     );
+
+    if (bilingualModeEnabled) {
+      invalidateRenderedAnnotations();
+    }
 
     injectTranslationsIntoContents(contents);
     applyHighlights();
@@ -1313,11 +1452,20 @@ export async function createEpubBridge({
       );
 
       if (modeChanged) {
+        invalidateRenderedAnnotations();
         void refreshCurrentView().catch(() => undefined);
         return;
       }
 
+      if (!bilingualModeEnabled) {
+        applyTranslations();
+        return;
+      }
+
+      invalidateRenderedAnnotations();
       applyTranslations();
+      applyHighlights();
+      applyNotes();
     },
   };
 
