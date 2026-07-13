@@ -116,9 +116,9 @@ const TRANSLATION_CFI_IGNORE_CLASS = "folio-translation";
 
 const FONT_STACKS: Record<ReadingFontFamily, string> = {
   Georgia: "Georgia, serif",
-  Menlo: "Menlo, Monaco, monospace",
+  Menlo: "Menlo, Monaco, Consolas, monospace",
   Palatino: "\"Palatino Linotype\", \"Book Antiqua\", Palatino, serif",
-  "system-ui": "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", sans-serif",
+  "system-ui": "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Segoe UI\", sans-serif",
 };
 
 const THEME_STYLES: Record<
