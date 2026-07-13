@@ -27,8 +27,10 @@ pub struct PartialReadingSettings {
     pub theme: Option<String>,
 }
 
+// Must be async: on Windows, building a webview window inside a sync command
+// deadlocks the main thread (wry#583).
 #[tauri::command]
-pub fn open_reader_window<R: Runtime>(
+pub async fn open_reader_window<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     book_id: String,
