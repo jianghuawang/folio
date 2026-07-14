@@ -6,7 +6,8 @@ use std::{
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use uuid::Uuid;
 
 use crate::{
     db::AppState,
@@ -58,9 +59,21 @@ pub enum BookFilter {
 }
 
 #[tauri::command]
-pub fn import_book(
+pub async fn import_book(
     app: AppHandle,
-    state: State<'_, AppState>,
+    file_paths: Vec<String>,
+) -> Result<ImportBookResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        import_book_blocking(&app, state.inner(), file_paths)
+    })
+    .await
+    .map_err(|_| "IMPORT_FAILED".to_string())?
+}
+
+fn import_book_blocking(
+    app: &AppHandle,
+    state: &AppState,
     file_paths: Vec<String>,
 ) -> Result<ImportBookResponse, String> {
     let mut response = ImportBookResponse::default();
@@ -96,20 +109,20 @@ pub fn import_book(
             continue;
         }
 
-        emit_import_progress(&app, &filename, "copying");
+        emit_import_progress(app, &filename, "copying");
 
-        let managed_copy =
-            match importer::create_managed_copy(&app, &source_path, file_hash.clone()) {
-                Ok(managed_copy) => managed_copy,
-                Err(_) => {
-                    response.errors.push(ImportFailure {
-                        filename: filename.clone(),
-                    });
-                    continue;
-                }
-            };
+        let managed_copy = match importer::create_managed_copy(app, &source_path, file_hash.clone())
+        {
+            Ok(managed_copy) => managed_copy,
+            Err(_) => {
+                response.errors.push(ImportFailure {
+                    filename: filename.clone(),
+                });
+                continue;
+            }
+        };
 
-        emit_import_progress(&app, &filename, "parsing");
+        emit_import_progress(app, &filename, "parsing");
 
         let imported_book = match importer::parse_managed_copy(managed_copy, &source_path) {
             Ok(imported_book) => imported_book,
@@ -136,7 +149,7 @@ pub fn import_book(
                 .ok_or_else(|| "BOOK_NOT_FOUND".to_string())?
         };
 
-        emit_import_progress(&app, &filename, "done");
+        emit_import_progress(app, &filename, "done");
         response.books.push(persisted_book);
     }
 
@@ -195,23 +208,53 @@ pub fn get_book(state: State<'_, AppState>, book_id: String) -> Result<Book, Str
 
 #[tauri::command]
 pub fn delete_book(state: State<'_, AppState>, book_id: String) -> Result<(), String> {
-    let connection = state
-        .db
-        .lock()
-        .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
+    let book = {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
+        get_book_record(&connection, &book_id)?.ok_or_else(|| "BOOK_NOT_FOUND".to_string())?
+    };
 
-    let book =
-        get_book_record(&connection, &book_id)?.ok_or_else(|| "BOOK_NOT_FOUND".to_string())?;
+    let mut staged_files = Vec::new();
+    let paths_to_delete =
+        std::iter::once(book.file_path.as_str()).chain(book.cover_image_path.as_deref());
 
-    remove_file_if_present(Path::new(&book.file_path)).map_err(|error| error.to_string())?;
-
-    if let Some(cover_image_path) = &book.cover_image_path {
-        remove_file_if_present(Path::new(cover_image_path)).map_err(|error| error.to_string())?;
+    for path in paths_to_delete {
+        match stage_file_for_deletion(Path::new(path)) {
+            Ok(Some(staged_file)) => staged_files.push(staged_file),
+            Ok(None) => {}
+            Err(error) => {
+                restore_staged_files(&staged_files);
+                return Err(error.to_string());
+            }
+        }
     }
 
-    connection
-        .execute("DELETE FROM books WHERE id = ?1", params![book_id])
-        .map_err(|error| error.to_string())?;
+    let deletion_result = {
+        match state.db.lock() {
+            Ok(connection) => connection
+                .execute("DELETE FROM books WHERE id = ?1", params![book_id])
+                .map_err(|error| error.to_string()),
+            Err(_) => Err("SQLITE_LOCK_ERROR".to_string()),
+        }
+    };
+
+    match deletion_result {
+        Ok(0) => {
+            restore_staged_files(&staged_files);
+            return Err("BOOK_NOT_FOUND".to_string());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            restore_staged_files(&staged_files);
+            return Err(error);
+        }
+    }
+
+    for staged_file in staged_files {
+        let _ = fs::remove_file(staged_file.staged_path);
+    }
 
     Ok(())
 }
@@ -321,11 +364,30 @@ fn emit_import_progress(app: &AppHandle, filename: &str, status: &'static str) {
     );
 }
 
-fn remove_file_if_present(path: &Path) -> Result<(), std::io::Error> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+struct StagedFileDeletion {
+    original_path: PathBuf,
+    staged_path: PathBuf,
+}
+
+fn stage_file_for_deletion(path: &Path) -> Result<Option<StagedFileDeletion>, std::io::Error> {
+    let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+        return Ok(None);
+    };
+    let staged_path = path.with_file_name(format!(".{file_name}.folio-delete-{}", Uuid::new_v4()));
+
+    match fs::rename(path, &staged_path) {
+        Ok(()) => Ok(Some(StagedFileDeletion {
+            original_path: path.to_path_buf(),
+            staged_path,
+        })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
+    }
+}
+
+fn restore_staged_files(staged_files: &[StagedFileDeletion]) {
+    for staged_file in staged_files.iter().rev() {
+        let _ = fs::rename(&staged_file.staged_path, &staged_file.original_path);
     }
 }
 

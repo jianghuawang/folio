@@ -80,18 +80,11 @@ pub fn run() {
                     let _ = persist_window_state(window, state.inner());
                 }
             }
-
-            if let WindowEvent::CloseRequested { .. } = event {
-                if window.label() == MAIN_WINDOW_LABEL {
-                    window.app_handle().exit(0);
-                }
-            }
         })
         .setup(|app| {
-            let app_state = db::init_app_state(app.handle())
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
+            let app_state = db::init_app_state(app.handle()).map_err(std::io::Error::other)?;
             commands::translations::normalize_in_progress_jobs(&app_state)
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
+                .map_err(std::io::Error::other)?;
             app.manage(app_state);
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
@@ -175,7 +168,7 @@ pub(crate) fn restore_window_state<R: Runtime>(
     let Some(persisted_state) = load_persisted_window_state(state, key)? else {
         return Ok(());
     };
-    let clamped_state = clamp_window_state(&window.app_handle(), &persisted_state)?;
+    let clamped_state = clamp_window_state(window.app_handle(), &persisted_state)?;
 
     window
         .set_size(Size::Physical(PhysicalSize::new(

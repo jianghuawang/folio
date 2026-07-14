@@ -19,7 +19,6 @@ const CONTAINER_PATH: &str = "META-INF/container.xml";
 const PACKAGE_NS: &str = "http://www.idpf.org/2007/opf";
 const DC_NS: &str = "http://purl.org/dc/elements/1.1/";
 const COVERS_DIRECTORY: &str = "Covers";
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 #[derive(Debug)]
 pub struct ManagedBookCopy {
@@ -274,11 +273,6 @@ fn extract_cover_image(
     fs::create_dir_all(&covers_directory)?;
 
     let cover_path = covers_directory.join(format!("{book_id}.png"));
-
-    if cover_bytes.starts_with(PNG_SIGNATURE) {
-        fs::write(&cover_path, cover_bytes)?;
-        return Ok(Some(cover_path));
-    }
 
     if convert_cover_to_png(&cover_bytes, &cover_path).is_ok() {
         return Ok(Some(cover_path));

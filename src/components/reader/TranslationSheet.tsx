@@ -163,7 +163,7 @@ export function TranslationSheet({
         }}
       >
         <div
-          className="pointer-events-auto relative w-full origin-top-right animate-in zoom-in-95 duration-[160ms] ease-out"
+          className="pointer-events-auto relative w-full origin-top-right animate-in zoom-in-95 [transition-duration:160ms] ease-out"
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div

@@ -1,8 +1,12 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs::File,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State, WebviewUrl, WebviewWindowBuilder};
+use zip::ZipArchive;
 
 use crate::{db::AppState, restore_window_state, window_state_key_for_reader};
 
@@ -32,36 +36,48 @@ pub struct PartialReadingSettings {
 #[tauri::command]
 pub async fn open_reader_window<R: Runtime>(
     app: AppHandle<R>,
-    state: State<'_, AppState>,
     book_id: String,
 ) -> Result<(), String> {
     eprintln!("[reader] open_reader_window requested for book_id={book_id}");
 
-    let book_title = {
+    let blocking_app = app.clone();
+    let blocking_book_id = book_id.clone();
+    let book_title = tauri::async_runtime::spawn_blocking(move || {
+        let state = blocking_app.state::<AppState>();
+        let (book_title, managed_file_path) = {
+            let connection = state
+                .db
+                .lock()
+                .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
+
+            connection
+                .query_row(
+                    "SELECT title, file_path FROM books WHERE id = ?1",
+                    params![&blocking_book_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "BOOK_NOT_FOUND".to_string())?
+        };
+
+        validate_managed_epub(&managed_file_path)?;
+
         let connection = state
             .db
             .lock()
             .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
-
-        let title = connection
-            .query_row(
-                "SELECT title FROM books WHERE id = ?1",
-                params![&book_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "BOOK_NOT_FOUND".to_string())?;
-
         connection
             .execute(
                 "UPDATE books SET last_read_at = ?2 WHERE id = ?1",
-                params![&book_id, now_unix_timestamp()],
+                params![&blocking_book_id, now_unix_timestamp()],
             )
             .map_err(|error| error.to_string())?;
 
-        title
-    };
+        Ok::<_, String>(book_title)
+    })
+    .await
+    .map_err(|_| "MANAGED_FILE_INVALID".to_string())??;
 
     let window_label = format!("reader-{book_id}");
 
@@ -77,7 +93,7 @@ pub async fn open_reader_window<R: Runtime>(
     let builder = WebviewWindowBuilder::new(
         &app,
         window_label.clone(),
-        WebviewUrl::App("/reader".into()),
+        WebviewUrl::App(format!("/reader?bookId={book_id}").into()),
     )
     .title(format!("{book_title} — Folio"))
     .inner_size(900.0, 700.0)
@@ -96,6 +112,7 @@ pub async fn open_reader_window<R: Runtime>(
     })?;
 
     let window_state_key = window_state_key_for_reader(&book_id);
+    let state = app.state::<AppState>();
     if let Err(error) = restore_window_state(&window, state.inner(), &window_state_key) {
         eprintln!("[reader] restore_window_state failed: {error}");
         return Err(error);
@@ -110,6 +127,15 @@ pub async fn open_reader_window<R: Runtime>(
     })?;
 
     eprintln!("[reader] open_reader_window completed label={window_label}");
+    Ok(())
+}
+
+fn validate_managed_epub(file_path: &str) -> Result<(), String> {
+    let file = File::open(file_path).map_err(|_| "MANAGED_FILE_INVALID".to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(|_| "MANAGED_FILE_INVALID".to_string())?;
+    archive
+        .by_name("META-INF/container.xml")
+        .map_err(|_| "MANAGED_FILE_INVALID".to_string())?;
     Ok(())
 }
 

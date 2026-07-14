@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{self, File},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
 };
@@ -11,6 +11,7 @@ use quick_xml::{
     Reader, Writer,
 };
 use tauri::{AppHandle, Emitter};
+use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::llm::Translation;
@@ -35,6 +36,28 @@ pub fn export_bilingual_epub(
     source_path: &str,
     translations: &[Translation],
     save_path: &str,
+) -> Result<(), String> {
+    let save_path = Path::new(save_path);
+    let temporary_path = sibling_export_path(save_path, "tmp")?;
+
+    let write_result = write_bilingual_epub(app_handle, source_path, translations, &temporary_path);
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+
+    let replace_result = replace_export_file(&temporary_path, save_path);
+    if replace_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    replace_result
+}
+
+fn write_bilingual_epub(
+    app_handle: &AppHandle,
+    source_path: &str,
+    translations: &[Translation],
+    save_path: &Path,
 ) -> Result<(), String> {
     let source_file = File::open(source_path).map_err(|_| "WRITE_ERROR".to_string())?;
     let mut archive = ZipArchive::new(source_file).map_err(|_| "WRITE_ERROR".to_string())?;
@@ -93,8 +116,42 @@ pub fn export_bilingual_epub(
             .map_err(|_| "WRITE_ERROR".to_string())?;
     }
 
-    writer.finish().map_err(|_| "WRITE_ERROR".to_string())?;
+    writer
+        .finish()
+        .map_err(|_| "WRITE_ERROR".to_string())?
+        .sync_all()
+        .map_err(|_| "WRITE_ERROR".to_string())?;
 
+    Ok(())
+}
+
+fn sibling_export_path(destination: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let file_name = destination
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "WRITE_ERROR".to_string())?;
+
+    Ok(destination.with_file_name(format!(
+        ".{file_name}.folio-export-{}.{suffix}",
+        Uuid::new_v4()
+    )))
+}
+
+fn replace_export_file(temporary_path: &Path, destination: &Path) -> Result<(), String> {
+    if !destination.exists() {
+        return fs::rename(temporary_path, destination).map_err(|_| "WRITE_ERROR".to_string());
+    }
+
+    let backup_path = sibling_export_path(destination, "backup")?;
+    fs::rename(destination, &backup_path).map_err(|_| "WRITE_ERROR".to_string())?;
+
+    if fs::rename(temporary_path, destination).is_err() {
+        let _ = fs::rename(&backup_path, destination);
+        let _ = fs::remove_file(temporary_path);
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    let _ = fs::remove_file(backup_path);
     Ok(())
 }
 
@@ -296,9 +353,7 @@ fn inject_translations_into_chapter(
             }
             Ok(Event::End(event)) => {
                 let is_root_paragraph_end = event.name().as_ref() == b"p" && paragraph_depth == 1;
-                if paragraph_depth > 0 {
-                    paragraph_depth -= 1;
-                }
+                paragraph_depth = paragraph_depth.saturating_sub(1);
 
                 writer
                     .write_event(Event::End(event.into_owned()))

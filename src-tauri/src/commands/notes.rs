@@ -109,11 +109,7 @@ pub fn save_note(
 }
 
 #[tauri::command]
-pub fn update_note(
-    state: State<'_, AppState>,
-    id: String,
-    body: String,
-) -> Result<Option<Note>, String> {
+pub fn update_note(state: State<'_, AppState>, id: String, body: String) -> Result<Note, String> {
     let connection = state
         .db
         .lock()
@@ -133,10 +129,7 @@ pub fn update_note(
 
     let trimmed_body = body.trim();
     if trimmed_body.is_empty() {
-        connection
-            .execute("DELETE FROM notes WHERE id = ?1", params![id])
-            .map_err(|error| error.to_string())?;
-        return Ok(None);
+        return Err("EMPTY_BODY".to_string());
     }
 
     let updated_note = Note {
@@ -155,7 +148,7 @@ pub fn update_note(
         )
         .map_err(|error| error.to_string())?;
 
-    Ok(Some(updated_note))
+    Ok(updated_note)
 }
 
 #[tauri::command]

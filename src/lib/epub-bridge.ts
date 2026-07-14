@@ -770,7 +770,7 @@ export async function createEpubBridge({
   const assetUrl = convertFileSrc(book.file_path);
   const epubBook = Epub(assetUrl) as EpubBook;
   const rendition = epubBook.renderTo(container, {
-    allowScriptedContent: true,
+    allowScriptedContent: false,
     flow: "paginated",
     height: "100%",
     width: "100%",
@@ -1456,26 +1456,45 @@ export async function createEpubBridge({
     goToHref: (href) => rendition.display(href),
     next: async () => {
       const pageTurnClass = "page-turning-next";
-      container.classList.add(pageTurnClass);
-      await rendition.next();
+      let completed = false;
       const onEnd = () => {
+        if (completed) {
+          return;
+        }
+
+        completed = true;
+        window.clearTimeout(fallbackTimer);
         container.classList.remove(pageTurnClass);
         container.removeEventListener("animationend", onEnd);
       };
       container.addEventListener("animationend", onEnd);
-      // Safety fallback in case animationend doesn't fire
-      setTimeout(() => container.classList.remove(pageTurnClass), 500);
+      const fallbackTimer = window.setTimeout(onEnd, 500);
+      container.classList.add(pageTurnClass);
+      await rendition.next().catch((error) => {
+        onEnd();
+        throw error;
+      });
     },
     prev: async () => {
       const pageTurnClass = "page-turning-prev";
-      container.classList.add(pageTurnClass);
-      await rendition.prev();
+      let completed = false;
       const onEnd = () => {
+        if (completed) {
+          return;
+        }
+
+        completed = true;
+        window.clearTimeout(fallbackTimer);
         container.classList.remove(pageTurnClass);
         container.removeEventListener("animationend", onEnd);
       };
       container.addEventListener("animationend", onEnd);
-      setTimeout(() => container.classList.remove(pageTurnClass), 500);
+      const fallbackTimer = window.setTimeout(onEnd, 500);
+      container.classList.add(pageTurnClass);
+      await rendition.prev().catch((error) => {
+        onEnd();
+        throw error;
+      });
     },
     resolveAnnotationLocation,
     setHighlights: (highlights) => {

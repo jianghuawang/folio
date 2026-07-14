@@ -155,7 +155,9 @@ export function EpubViewer({
     let disposed = false;
     let unlisten: (() => void) | null = null;
 
-    void currentWindow.onCloseRequested(async () => {
+    void currentWindow.onCloseRequested(async (event) => {
+      event.preventDefault();
+
       if (!closeRequestPromiseRef.current) {
         if (saveTimeoutRef.current) {
           window.clearTimeout(saveTimeoutRef.current);
@@ -170,6 +172,8 @@ export function EpubViewer({
       if (disposed) {
         return;
       }
+
+      await currentWindow.destroy();
     }).then((registeredUnlisten) => {
       if (disposed) {
         registeredUnlisten();
@@ -270,7 +274,7 @@ export function EpubViewer({
       bridgeRef.current?.destroy();
       bridgeRef.current = null;
     };
-  }, [book, flushReadingPosition]);
+  }, [book.file_path, book.id, flushReadingPosition]);
 
   useEffect(() => {
     bridgeRef.current?.applyReadingSettings(readingSettings);

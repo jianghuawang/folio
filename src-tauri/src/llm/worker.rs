@@ -11,7 +11,7 @@ use std::{
 };
 
 use minidom::Element;
-use quick_xml::{events::Event, Reader};
+use quick_xml::{events::Event, Reader, Writer};
 use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
 use tauri::{async_runtime, async_runtime::JoinHandle, AppHandle, Emitter, Manager};
@@ -297,7 +297,7 @@ fn build_translation_chunks(
     for work_item in pending_work_items {
         let continues_run = current_run
             .last()
-            .map_or(true, |previous: &ParagraphWorkItem| {
+            .is_none_or(|previous: &ParagraphWorkItem| {
                 previous.locator.spine_item_href == work_item.locator.spine_item_href
                     && previous.locator.paragraph_index + 1 == work_item.locator.paragraph_index
             });
@@ -865,7 +865,7 @@ fn extract_paragraph_fragments(chapter_xml: &str) -> Result<Vec<String>, String>
     reader.config_mut().trim_text(false);
     let mut buffer = Vec::new();
     let mut fragments = Vec::new();
-    let mut active_fragment = String::new();
+    let mut active_fragment = Writer::new(Vec::new());
     let mut paragraph_depth = 0_usize;
 
     loop {
@@ -875,19 +875,19 @@ fn extract_paragraph_fragments(chapter_xml: &str) -> Result<Vec<String>, String>
 
                 if tag_name.as_slice() == b"p" && paragraph_depth == 0 {
                     paragraph_depth = 1;
-                    active_fragment.clear();
+                    active_fragment = Writer::new(Vec::new());
                 } else if paragraph_depth > 0 {
                     paragraph_depth += 1;
-                    active_fragment.push_str(
-                        std::str::from_utf8(event.as_ref()).map_err(|error| error.to_string())?,
-                    );
+                    active_fragment
+                        .write_event(Event::Start(event.into_owned()))
+                        .map_err(|error| error.to_string())?;
                 }
             }
             Ok(Event::Empty(event)) => {
                 if paragraph_depth > 0 {
-                    active_fragment.push_str(
-                        std::str::from_utf8(event.as_ref()).map_err(|error| error.to_string())?,
-                    );
+                    active_fragment
+                        .write_event(Event::Empty(event.into_owned()))
+                        .map_err(|error| error.to_string())?;
                 } else if event.name().as_ref() == b"p" {
                     fragments.push(String::new());
                 }
@@ -900,27 +900,38 @@ fn extract_paragraph_fragments(chapter_xml: &str) -> Result<Vec<String>, String>
 
                 paragraph_depth -= 1;
                 if paragraph_depth == 0 && event.name().as_ref() == b"p" {
-                    fragments.push(active_fragment.clone());
-                    active_fragment.clear();
+                    let fragment = std::mem::replace(&mut active_fragment, Writer::new(Vec::new()))
+                        .into_inner();
+                    fragments.push(String::from_utf8(fragment).map_err(|error| error.to_string())?);
                 } else {
-                    active_fragment.push_str(
-                        std::str::from_utf8(event.as_ref()).map_err(|error| error.to_string())?,
-                    );
+                    active_fragment
+                        .write_event(Event::End(event.into_owned()))
+                        .map_err(|error| error.to_string())?;
                 }
             }
             Ok(Event::Text(event)) => {
                 if paragraph_depth > 0 {
-                    active_fragment.push_str(
-                        std::str::from_utf8(event.as_ref()).map_err(|error| error.to_string())?,
-                    );
+                    active_fragment
+                        .write_event(Event::Text(event.into_owned()))
+                        .map_err(|error| error.to_string())?;
                 }
             }
             Ok(Event::CData(event)) => {
                 if paragraph_depth > 0 {
-                    active_fragment.push_str(
-                        std::str::from_utf8(event.as_ref()).map_err(|error| error.to_string())?,
-                    );
+                    active_fragment
+                        .write_event(Event::CData(event.into_owned()))
+                        .map_err(|error| error.to_string())?;
                 }
+            }
+            Ok(Event::Comment(event)) if paragraph_depth > 0 => {
+                active_fragment
+                    .write_event(Event::Comment(event.into_owned()))
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(Event::PI(event)) if paragraph_depth > 0 => {
+                active_fragment
+                    .write_event(Event::PI(event.into_owned()))
+                    .map_err(|error| error.to_string())?;
             }
             Ok(Event::Eof) => break,
             Ok(_) => {}
@@ -931,4 +942,19 @@ fn extract_paragraph_fragments(chapter_xml: &str) -> Result<Vec<String>, String>
     }
 
     Ok(fragments)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_paragraph_fragments;
+
+    #[test]
+    fn paragraph_extraction_preserves_inline_markup_and_unicode() {
+        let fragments = extract_paragraph_fragments(
+            r#"<html><body><p>Hello <em>世界</em><br/>!</p><p>Second</p></body></html>"#,
+        )
+        .unwrap();
+
+        assert_eq!(fragments, vec!["Hello <em>世界</em><br/>!", "Second"]);
+    }
 }

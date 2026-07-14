@@ -42,11 +42,19 @@ export function TranslationBanner({
     );
   }
 
-  if (!job || !statusMessage || (job.status !== "in_progress" && job.status !== "paused")) {
+  const failedCount = job?.failed_paragraph_locators.length ?? 0;
+  const hasRetryableFailures = Boolean(
+    job && failedCount > 0 && job.status !== "in_progress" && job.status !== "paused",
+  );
+
+  if (
+    !job ||
+    !statusMessage ||
+    (job.status !== "in_progress" && job.status !== "paused" && !hasRetryableFailures)
+  ) {
     return null;
   }
 
-  const failedCount = job.failed_paragraph_locators.length;
   const isRestartPrompt = job.status === "paused" && job.pause_reason === "app_restart";
   const isPaused = job.status === "paused";
 
@@ -58,7 +66,7 @@ export function TranslationBanner({
           <span className="truncate">
             {isRestartPrompt ? statusMessage : statusMessage.replace("'{title}'", bookTitle)}
           </span>
-          {failedCount > 0 ? (
+          {hasRetryableFailures ? (
             <button
               type="button"
               onClick={onRetryFailed}
@@ -70,7 +78,7 @@ export function TranslationBanner({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {isRestartPrompt ? (
+          {hasRetryableFailures ? null : isRestartPrompt ? (
             <>
               <Button
                 type="button"

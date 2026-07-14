@@ -1,7 +1,11 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use rusqlite::{params, OptionalExtension};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager};
+use uuid::Uuid;
 
 use crate::{
     db::AppState,
@@ -11,9 +15,23 @@ use crate::{
 };
 
 #[tauri::command]
-pub fn export_bilingual_epub(
+pub async fn export_bilingual_epub(
     app: AppHandle,
-    state: State<'_, AppState>,
+    book_id: String,
+    target_language: String,
+    save_path: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        export_bilingual_epub_blocking(&app, state.inner(), book_id, target_language, save_path)
+    })
+    .await
+    .map_err(|_| "WRITE_ERROR".to_string())?
+}
+
+fn export_bilingual_epub_blocking(
+    app: &AppHandle,
+    state: &AppState,
     book_id: String,
     target_language: String,
     save_path: String,
@@ -72,12 +90,25 @@ pub fn export_bilingual_epub(
 
     validate_save_path(&save_path, &managed_file_path)?;
 
-    exporter::export_bilingual_epub(&app, &managed_file_path, &translations, &save_path)
+    exporter::export_bilingual_epub(app, &managed_file_path, &translations, &save_path)
 }
 
 #[tauri::command]
-pub fn export_highlights(
-    state: State<'_, AppState>,
+pub async fn export_highlights(
+    app: AppHandle,
+    book_id: String,
+    save_path: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        export_highlights_blocking(state.inner(), book_id, save_path)
+    })
+    .await
+    .map_err(|_| "WRITE_ERROR".to_string())?
+}
+
+fn export_highlights_blocking(
+    state: &AppState,
     book_id: String,
     save_path: String,
 ) -> Result<(), String> {
@@ -134,7 +165,56 @@ pub fn export_highlights(
         _ => return Err("UNSUPPORTED_EXPORT_FORMAT".to_string()),
     };
 
-    fs::write(&save_path, output).map_err(|_| "WRITE_ERROR".to_string())
+    write_export_file_atomically(Path::new(&save_path), output.as_bytes())
+}
+
+fn write_export_file_atomically(destination: &Path, contents: &[u8]) -> Result<(), String> {
+    let temporary_path = sibling_export_path(destination, "tmp")?;
+    if fs::write(&temporary_path, contents).is_err() {
+        let _ = fs::remove_file(&temporary_path);
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    fs::File::open(&temporary_path)
+        .and_then(|file| file.sync_all())
+        .map_err(|_| {
+            let _ = fs::remove_file(&temporary_path);
+            "WRITE_ERROR".to_string()
+        })?;
+
+    if !destination.exists() {
+        if fs::rename(&temporary_path, destination).is_err() {
+            let _ = fs::remove_file(&temporary_path);
+            return Err("WRITE_ERROR".to_string());
+        }
+        return Ok(());
+    }
+
+    let backup_path = sibling_export_path(destination, "backup")?;
+    if fs::rename(destination, &backup_path).is_err() {
+        let _ = fs::remove_file(&temporary_path);
+        return Err("WRITE_ERROR".to_string());
+    }
+    if fs::rename(&temporary_path, destination).is_err() {
+        let _ = fs::rename(&backup_path, destination);
+        let _ = fs::remove_file(&temporary_path);
+        return Err("WRITE_ERROR".to_string());
+    }
+
+    let _ = fs::remove_file(backup_path);
+    Ok(())
+}
+
+fn sibling_export_path(destination: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let file_name = destination
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "WRITE_ERROR".to_string())?;
+
+    Ok(destination.with_file_name(format!(
+        ".{file_name}.folio-export-{}.{suffix}",
+        Uuid::new_v4()
+    )))
 }
 
 fn validate_save_path(save_path: &str, managed_file_path: &str) -> Result<(), String> {

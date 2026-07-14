@@ -346,16 +346,22 @@ export async function renderQuoteCoverBlob({
     lines: [quotedText],
   };
   let lineHeight = fontSize * 1.18;
+  const minimumFontSize = Math.max(0.01, scale * 0.01);
 
-  while (fontSize >= Math.round(14 * scale)) {
+  while (true) {
     context.font = `500 ${fontSize}px Georgia`;
     wrappedQuote = wrapText(context, quotedText, quoteWidth);
     lineHeight = fontSize * (fontSize <= 24 * scale ? 1.14 : 1.18);
     const blockHeight = wrappedQuote.lines.length * lineHeight;
-    if (blockHeight <= quoteHeight) {
+    if (blockHeight <= quoteHeight || fontSize === minimumFontSize) {
       break;
     }
-    fontSize -= Math.max(1, Math.round(2 * scale));
+    fontSize = Math.max(
+      minimumFontSize,
+      fontSize > 12 * scale
+        ? fontSize - Math.max(1, 2 * scale)
+        : fontSize * 0.88,
+    );
   }
 
   context.fillStyle = palette.primaryText;

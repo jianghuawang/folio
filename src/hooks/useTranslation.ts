@@ -66,6 +66,7 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
   const resolvedTargetLanguageRef = useRef<string | null>(null);
   const pendingTranslationsRefreshRef = useRef<Promise<void> | null>(null);
   const queuedTranslationsRefreshLanguageRef = useRef<string | null>(null);
+  const exportInProgressRef = useRef(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [progressEvent, setProgressEvent] = useState<TranslationProgressEvent | null>(null);
   const [pausedEvent, setPausedEvent] = useState<TranslationPausedEvent | null>(null);
@@ -292,75 +293,88 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
     let cleanup: (() => void) | undefined;
 
     const registerListeners = async () => {
-      const unlistenProgress = await listen<TranslationProgressEvent>(
-        "translation:progress",
-        (event) => {
+      const unlistenCallbacks: Array<() => void> = [];
+
+      try {
+        const unlistenProgress = await listen<TranslationProgressEvent>(
+          "translation:progress",
+          (event) => {
+            const trackedJobId = activeJobIdRef.current;
+            if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
+              return;
+            }
+
+            const language = resolvedTargetLanguageRef.current;
+            setProgressEvent(event.payload);
+            cacheProgress(event.payload, language);
+            refreshTranslationsFromDb(language);
+          },
+        );
+        unlistenCallbacks.push(unlistenProgress);
+
+        const unlistenComplete = await listen<TranslationCompleteEvent>(
+          "translation:complete",
+          (event) => {
+            const trackedJobId = activeJobIdRef.current;
+            if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
+              return;
+            }
+
+            const language = resolvedTargetLanguageRef.current;
+            refreshTranslationsFromDb(language);
+            void invalidateTranslationQueries(language);
+          },
+        );
+        unlistenCallbacks.push(unlistenComplete);
+
+        const unlistenError = await listen<TranslationErrorEvent>("translation:error", (event) => {
           const trackedJobId = activeJobIdRef.current;
           if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
             return;
           }
 
-          const language = resolvedTargetLanguageRef.current;
-          setProgressEvent(event.payload);
-          cacheProgress(event.payload, language);
-          refreshTranslationsFromDb(language);
-        },
-      );
-
-      const unlistenComplete = await listen<TranslationCompleteEvent>(
-        "translation:complete",
-        (event) => {
-          const trackedJobId = activeJobIdRef.current;
-          if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
-            return;
-          }
-
+          setLatestError(event.payload);
           const language = resolvedTargetLanguageRef.current;
           refreshTranslationsFromDb(language);
           void invalidateTranslationQueries(language);
-        },
-      );
+        });
+        unlistenCallbacks.push(unlistenError);
 
-      const unlistenError = await listen<TranslationErrorEvent>("translation:error", (event) => {
-        const trackedJobId = activeJobIdRef.current;
-        if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
-          return;
-        }
+        const unlistenPaused = await listen<TranslationPausedEvent>("translation:paused", (event) => {
+          const trackedJobId = activeJobIdRef.current;
+          if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
+            return;
+          }
 
-        setLatestError(event.payload);
-        const language = resolvedTargetLanguageRef.current;
-        refreshTranslationsFromDb(language);
-        void invalidateTranslationQueries(language);
-      });
+          setPausedEvent(event.payload);
+          void invalidateTranslationQueries(resolvedTargetLanguageRef.current);
+        });
+        unlistenCallbacks.push(unlistenPaused);
 
-      const unlistenPaused = await listen<TranslationPausedEvent>("translation:paused", (event) => {
-        const trackedJobId = activeJobIdRef.current;
-        if (!active || !trackedJobId || event.payload.job_id !== trackedJobId) {
-          return;
-        }
+        const unlistenExportProgress = await listen<ExportProgressEvent>("export:progress", (event) => {
+          if (!active || !exportInProgressRef.current) {
+            return;
+          }
 
-        setPausedEvent(event.payload);
-        void invalidateTranslationQueries(resolvedTargetLanguageRef.current);
-      });
+          setExportProgress(event.payload.percent);
+        });
+        unlistenCallbacks.push(unlistenExportProgress);
 
-      const unlistenExportProgress = await listen<ExportProgressEvent>("export:progress", (event) => {
-        if (!active) {
-          return;
-        }
-
-        setExportProgress(event.payload.percent);
-      });
-
-      return () => {
-        unlistenProgress();
-        unlistenComplete();
-        unlistenError();
-        unlistenPaused();
-        unlistenExportProgress();
-      };
+        return () => {
+          unlistenCallbacks.forEach((unlisten) => unlisten());
+        };
+      } catch {
+        unlistenCallbacks.forEach((unlisten) => unlisten());
+        return () => undefined;
+      }
     };
 
     void registerListeners().then((nextCleanup) => {
+      if (!active) {
+        nextCleanup();
+        return;
+      }
+
       cleanup = nextCleanup;
     });
 
@@ -476,9 +490,11 @@ export function useTranslation(bookId: string | null, bookTitle: string) {
       return true;
     },
     onMutate: () => {
+      exportInProgressRef.current = true;
       setExportProgress(0);
     },
     onSettled: () => {
+      exportInProgressRef.current = false;
       setExportProgress(null);
     },
   });

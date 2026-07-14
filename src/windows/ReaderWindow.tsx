@@ -93,7 +93,12 @@ function getLegacyNoteOnlyHighlight(note: Note, highlightById: Map<string, Highl
 
 const READER_WINDOW_LABEL_PREFIX = "reader-";
 
-function resolveBookIdFromWindowLabel(): string | null {
+function resolveBookId(): string | null {
+  const queryBookId = new URLSearchParams(window.location.search).get("bookId")?.trim();
+  if (queryBookId) {
+    return queryBookId;
+  }
+
   try {
     const label = getCurrentWindow().label;
     if (label.startsWith(READER_WINDOW_LABEL_PREFIX)) {
@@ -108,7 +113,7 @@ function resolveBookIdFromWindowLabel(): string | null {
 }
 
 export default function ReaderWindow() {
-  const bookId = useMemo(() => resolveBookIdFromWindowLabel(), []);
+  const bookId = useMemo(() => resolveBookId(), []);
   const { data: book, error, isLoading, refetch } = useBook(bookId);
   const readingSettingsQuery = useReadingSettings(bookId);
   const updateReadingSettingsMutation = useUpdateReadingSettings(bookId);
@@ -130,6 +135,7 @@ export default function ReaderWindow() {
   const showHighlightSelection = selectionController.showHighlightSelection;
 
   const bridge = useReaderStore((state) => state.bridge);
+  const annotationMetaByKey = useReaderStore((state) => state.annotationMetaByKey);
   const closeAnnotations = useReaderStore((state) => state.closeAnnotations);
   const closeNoteEditor = useReaderStore((state) => state.closeNoteEditor);
   const closeQuoteCover = useReaderStore((state) => state.closeQuoteCover);
@@ -171,6 +177,7 @@ export default function ReaderWindow() {
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();
+    let disposed = false;
     let unlistenFocus: (() => void) | null = null;
     let unlistenApiKeyStatusChanged: (() => void) | null = null;
 
@@ -181,16 +188,25 @@ export default function ReaderWindow() {
         }
       })
       .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
         unlistenFocus = unlisten;
       });
 
     void listen(API_KEY_STATUS_CHANGED_EVENT, () => {
       void refetchApiKeyStatus();
     }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
       unlistenApiKeyStatusChanged = unlisten;
     });
 
     return () => {
+      disposed = true;
       unlistenFocus?.();
       unlistenApiKeyStatusChanged?.();
     };
@@ -296,17 +312,17 @@ export default function ReaderWindow() {
     () =>
       allHighlights.map((highlight) => ({
         highlight,
-        meta: useReaderStore.getState().annotationMetaByKey[`highlight:${highlight.id}`] ?? null,
+        meta: annotationMetaByKey[`highlight:${highlight.id}`] ?? null,
       })),
-    [allHighlights],
+    [allHighlights, annotationMetaByKey],
   );
   const noteItems = useMemo(
     () =>
       (notesQuery.data ?? []).map((note) => ({
-        meta: useReaderStore.getState().annotationMetaByKey[`note:${note.id}`] ?? null,
+        meta: annotationMetaByKey[`note:${note.id}`] ?? null,
         note,
       })),
-    [notesQuery.data],
+    [annotationMetaByKey, notesQuery.data],
   );
 
   const activeHighlight = useMemo(() => {
@@ -400,25 +416,15 @@ export default function ReaderWindow() {
       return;
     }
 
+    let newlyCreatedHighlightId: string | null = null;
+
     try {
       if (noteEditor.noteId) {
-        const updatedNote = await updateNoteMutation.mutateAsync({
+        await updateNoteMutation.mutateAsync({
           body,
           bookId,
           id: noteEditor.noteId,
         });
-
-        if (!updatedNote && activeNote) {
-          const linkedHighlight = getLegacyNoteOnlyHighlight(activeNote, highlightById);
-          if (linkedHighlight) {
-            await deleteHighlightMutation
-              .mutateAsync({
-                bookId,
-                id: linkedHighlight.id,
-              })
-              .catch(() => undefined);
-          }
-        }
       } else {
         let highlightId = noteEditor.highlightId;
 
@@ -430,6 +436,7 @@ export default function ReaderWindow() {
           });
 
           highlightId = createdHighlight.id;
+          newlyCreatedHighlightId = createdHighlight.id;
         }
 
         await saveNoteMutation.mutateAsync({
@@ -443,6 +450,15 @@ export default function ReaderWindow() {
       closeNoteEditor();
       clearSelection();
     } catch (mutationError) {
+      if (newlyCreatedHighlightId) {
+        await deleteHighlightMutation
+          .mutateAsync({
+            bookId,
+            id: newlyCreatedHighlightId,
+          })
+          .catch(() => undefined);
+      }
+
       const message =
         mutationError instanceof Error
           ? mutationError.message

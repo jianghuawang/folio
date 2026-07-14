@@ -514,22 +514,19 @@ fn replace_html_entities(fragment: &str) -> String {
 
 fn normalize_void_tags(fragment: &str) -> String {
     let mut normalized = String::with_capacity(fragment.len());
-    let bytes = fragment.as_bytes();
     let mut index = 0;
 
-    while index < bytes.len() {
-        if bytes[index] != b'<' {
-            normalized.push(bytes[index] as char);
-            index += 1;
-            continue;
-        }
+    while let Some(relative_tag_start) = fragment[index..].find('<') {
+        let tag_start = index + relative_tag_start;
+        normalized.push_str(&fragment[index..tag_start]);
 
-        let Some(tag_end) = fragment[index..].find('>') else {
-            normalized.push_str(&fragment[index..]);
+        let Some(relative_tag_end) = fragment[tag_start..].find('>') else {
+            normalized.push_str(&fragment[tag_start..]);
+            index = fragment.len();
             break;
         };
-        let tag_end = index + tag_end;
-        let raw_tag = &fragment[index..=tag_end];
+        let tag_end = tag_start + relative_tag_end;
+        let raw_tag = &fragment[tag_start..=tag_end];
         let trimmed_tag = raw_tag.trim();
         let is_closing_tag = trimmed_tag.starts_with("</");
         let is_processing_tag = trimmed_tag.starts_with("<?") || trimmed_tag.starts_with("<!");
@@ -558,6 +555,10 @@ fn normalize_void_tags(fragment: &str) -> String {
         }
 
         index = tag_end + 1;
+    }
+
+    if index < fragment.len() {
+        normalized.push_str(&fragment[index..]);
     }
 
     normalized
@@ -710,7 +711,8 @@ struct OpenRouterMessagePart {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_translated_chunk_response, sanitize_translated_html, TranslationChunkParagraph,
+        normalize_void_tags, parse_translated_chunk_response, sanitize_translated_html,
+        TranslationChunkParagraph,
     };
 
     #[test]
@@ -737,6 +739,14 @@ mod tests {
                 .unwrap();
 
         assert_eq!(sanitized, "hello&#160;<br/>world");
+    }
+
+    #[test]
+    fn void_tag_normalization_preserves_unicode_text() {
+        assert_eq!(
+            normalize_void_tags("你好<br>世界 — Привет"),
+            "你好<br />世界 — Привет"
+        );
     }
 
     #[test]

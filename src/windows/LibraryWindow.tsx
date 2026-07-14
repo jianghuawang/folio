@@ -13,7 +13,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useBooks, useDeleteBook, useImportBooks } from "@/hooks/useBooks";
 import { useLibraryFilter } from "@/hooks/useLibraryFilter";
 import { isMacOS } from "@/lib/platform";
-import { openReaderWindow } from "@/lib/tauri-commands";
+import { FolioError, openReaderWindow } from "@/lib/tauri-commands";
 import { useLibraryStore } from "@/store/libraryStore";
 import type { Book } from "@/types/book";
 
@@ -80,6 +80,8 @@ export default function LibraryWindow() {
   const heading = isSearchActive ? `${filteredBooks.length} books match "${debouncedQuery}"` : section === "recent" ? "Recently Read" : "All Books";
   const isLibraryEmpty = !allBooksQuery.isLoading && (allBooksQuery.data?.length ?? 0) === 0;
   const hasSearchNoResults = isSearchActive && !activeQuery.isLoading && filteredBooks.length === 0;
+  const hasNoRecentBooks =
+    section === "recent" && !isSearchActive && !activeQuery.isLoading && filteredBooks.length === 0;
   const isGridLoading = activeQuery.isLoading;
 
   const openContextMenu = (book: Book, x: number, y: number) => {
@@ -172,6 +174,13 @@ export default function LibraryWindow() {
     try {
       await openReaderWindow(bookId);
     } catch (error) {
+      if (error instanceof FolioError && error.code === "MANAGED_FILE_INVALID") {
+        void showImportMessage(
+          "This book's managed library file is missing or corrupted. Re-import the book to read it again.",
+        );
+        return;
+      }
+
       const message =
         error instanceof Error
           ? error.message
@@ -297,6 +306,10 @@ export default function LibraryWindow() {
                 >
                   Clear Search
                 </button>
+              </div>
+            ) : hasNoRecentBooks ? (
+              <div className="flex min-h-[320px] items-center justify-center text-center">
+                <p className="text-[15px] font-medium text-white/65">No recently read books.</p>
               </div>
             ) : (
               <BookGrid

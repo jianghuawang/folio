@@ -291,9 +291,9 @@ export async function saveNote(
   }
 }
 
-export async function updateNote(id: string, body: string): Promise<Note | null> {
+export async function updateNote(id: string, body: string): Promise<Note> {
   try {
-    return await invokeTauri<Note | null>("update_note", { id, body });
+    return await invokeTauri<Note>("update_note", { id, body });
   } catch (error) {
     if (error instanceof FolioError) {
       throw error;

@@ -36,19 +36,31 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
   const coverImageSrc = book.cover_image_path ? convertFileSrc(book.cover_image_path) : null;
   const placeholderColor = hashStringToColor(book.title);
   const coverRef = useRef<HTMLButtonElement>(null);
+  const openingRef = useRef(false);
 
   const handleOpen = useCallback(() => {
+    if (openingRef.current) {
+      return;
+    }
+
+    openingRef.current = true;
     const el = coverRef.current;
     if (el) {
+      let completed = false;
+      const finishOpen = () => {
+        if (completed) {
+          return;
+        }
+
+        completed = true;
+        window.clearTimeout(fallbackTimer);
+        el.removeEventListener("animationend", finishOpen);
+        el.classList.remove("animate-book-press");
+        onOpen(book.id);
+      };
+      const fallbackTimer = window.setTimeout(finishOpen, 500);
+      el.addEventListener("animationend", finishOpen, { once: true });
       el.classList.add("animate-book-press");
-      el.addEventListener(
-        "animationend",
-        () => {
-          el.classList.remove("animate-book-press");
-          onOpen(book.id);
-        },
-        { once: true },
-      );
     } else {
       onOpen(book.id);
     }
@@ -58,7 +70,11 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
     <article
       className="animate-book-card-in group w-[160px] cursor-default select-none"
       style={{ animationDelay: `${animationDelay}ms` }}
-      onDoubleClick={handleOpen}
+      onDoubleClick={(event) => {
+        if (!(event.target as HTMLElement).closest("[data-book-actions]")) {
+          handleOpen();
+        }
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         onContextMenu(book, event.clientX, event.clientY);
@@ -68,7 +84,12 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
       <button
         ref={coverRef}
         type="button"
-        onClick={handleOpen}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleOpen();
+          }
+        }}
         className="relative block h-[220px] w-[160px] cursor-pointer overflow-hidden rounded-[4px] bg-[--color-bg-surface] text-left shadow-[0_1px_2px_rgba(0,0,0,0.35),0_6px_16px_rgba(0,0,0,0.35)] transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_2px_4px_rgba(0,0,0,0.35),0_14px_28px_rgba(0,0,0,0.45)] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a84ff]/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e1e1e]"
         style={{ transitionTimingFunction: "var(--ease-spring)" }}
         aria-label={`Open ${book.title}`}
@@ -121,6 +142,7 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
 
         {/* Center: three-dot menu — revealed on hover, like Books */}
         <button
+          data-book-actions="true"
           type="button"
           className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-white/40 opacity-0 transition-opacity duration-150 hover:text-white/75 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#0a84ff]/80 group-hover:opacity-100"
           onClick={(event) => {

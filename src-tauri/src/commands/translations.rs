@@ -71,26 +71,10 @@ pub fn start_translation(
     }
 
     let job = {
-        let connection = state
+        let mut connection = state
             .db
             .lock()
             .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
-
-        if replace_existing {
-            connection
-                .execute(
-                    "DELETE FROM translations WHERE book_id = ?1 AND target_language = ?2",
-                    params![&book_id, &target_language],
-                )
-                .map_err(|error| error.to_string())?;
-        }
-
-        connection
-            .execute(
-                "DELETE FROM translation_jobs WHERE book_id = ?1 AND target_language = ?2",
-                params![&book_id, &target_language],
-            )
-            .map_err(|error| error.to_string())?;
 
         let timestamp = now_unix_timestamp();
         let job = TranslationJob {
@@ -105,8 +89,27 @@ pub fn start_translation(
             created_at: timestamp,
             updated_at: timestamp,
         };
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
 
-        connection
+        if replace_existing {
+            transaction
+                .execute(
+                    "DELETE FROM translations WHERE book_id = ?1 AND target_language = ?2",
+                    params![&book_id, &target_language],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+
+        transaction
+            .execute(
+                "DELETE FROM translation_jobs WHERE book_id = ?1 AND target_language = ?2",
+                params![&book_id, &target_language],
+            )
+            .map_err(|error| error.to_string())?;
+
+        transaction
             .execute(
                 "INSERT INTO translation_jobs (
                     id,
@@ -133,6 +136,8 @@ pub fn start_translation(
                 ],
             )
             .map_err(|error| error.to_string())?;
+
+        transaction.commit().map_err(|error| error.to_string())?;
 
         job
     };
@@ -216,13 +221,13 @@ pub fn resume_translation(
     state: State<'_, AppState>,
     job_id: String,
 ) -> Result<TranslationJob, String> {
-    let (job, model, book_file_path) = {
+    let (mut job, model, book_file_path) = {
         let connection = state
             .db
             .lock()
             .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
 
-        let mut job = get_translation_job_by_id(&connection, &job_id)?
+        let job = get_translation_job_by_id(&connection, &job_id)?
             .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
 
         if job.status == TranslationJobStatus::InProgress {
@@ -235,15 +240,25 @@ pub fn resume_translation(
 
         let book = get_book_translation_source(&connection, &job.book_id)?;
         let model = read_llm_model(&connection)?;
-        let timestamp = now_unix_timestamp();
 
-        connection
+        (job, model, book.file_path)
+    };
+
+    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    let timestamp = now_unix_timestamp();
+
+    {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
+        let updated_rows = connection
             .execute(
                 "UPDATE translation_jobs
                  SET status = ?2,
                      pause_reason = NULL,
                      updated_at = ?3
-                 WHERE id = ?1",
+                 WHERE id = ?1 AND status = 'paused'",
                 params![
                     &job_id,
                     TranslationJobStatus::InProgress.as_str(),
@@ -252,14 +267,15 @@ pub fn resume_translation(
             )
             .map_err(|error| error.to_string())?;
 
-        job.status = TranslationJobStatus::InProgress;
-        job.pause_reason = None;
-        job.updated_at = timestamp;
+        if updated_rows == 0 {
+            return get_translation_job_by_id(&connection, &job_id)?
+                .ok_or_else(|| "JOB_NOT_FOUND".to_string());
+        }
+    }
 
-        (job, model, book.file_path)
-    };
-
-    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    job.status = TranslationJobStatus::InProgress;
+    job.pause_reason = None;
+    job.updated_at = timestamp;
 
     if !worker::resume_job(&job.id) {
         worker::spawn_translation_worker(
@@ -362,13 +378,13 @@ pub fn retry_failed_paragraphs(
     state: State<'_, AppState>,
     job_id: String,
 ) -> Result<TranslationJob, String> {
-    let (job, model, book_file_path, failed_locators) = {
+    let (mut job, model, book_file_path, failed_locators) = {
         let connection = state
             .db
             .lock()
             .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
 
-        let mut job = get_translation_job_by_id(&connection, &job_id)?
+        let job = get_translation_job_by_id(&connection, &job_id)?
             .ok_or_else(|| "JOB_NOT_FOUND".to_string())?;
         if job.status == TranslationJobStatus::InProgress
             || job.failed_paragraph_locators.is_empty()
@@ -379,16 +395,26 @@ pub fn retry_failed_paragraphs(
         let book = get_book_translation_source(&connection, &job.book_id)?;
         let model = read_llm_model(&connection)?;
         let failed_locators = job.failed_paragraph_locators.clone();
-        let timestamp = now_unix_timestamp();
 
-        connection
+        (job, model, book.file_path, failed_locators)
+    };
+
+    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    let timestamp = now_unix_timestamp();
+
+    {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| "SQLITE_LOCK_ERROR".to_string())?;
+        let updated_rows = connection
             .execute(
                 "UPDATE translation_jobs
                  SET status = ?2,
                      pause_reason = NULL,
                      failed_paragraph_locators = ?3,
                      updated_at = ?4
-                 WHERE id = ?1",
+                 WHERE id = ?1 AND status <> 'in_progress'",
                 params![
                     &job_id,
                     TranslationJobStatus::InProgress.as_str(),
@@ -398,15 +424,16 @@ pub fn retry_failed_paragraphs(
             )
             .map_err(|error| error.to_string())?;
 
-        job.status = TranslationJobStatus::InProgress;
-        job.pause_reason = None;
-        job.failed_paragraph_locators = Vec::new();
-        job.updated_at = timestamp;
+        if updated_rows == 0 {
+            return get_translation_job_by_id(&connection, &job_id)?
+                .ok_or_else(|| "JOB_NOT_FOUND".to_string());
+        }
+    }
 
-        (job, model, book.file_path, failed_locators)
-    };
-
-    let api_key = secure_store::load_api_key()?.ok_or_else(|| "NO_API_KEY".to_string())?;
+    job.status = TranslationJobStatus::InProgress;
+    job.pause_reason = None;
+    job.failed_paragraph_locators = Vec::new();
+    job.updated_at = timestamp;
 
     worker::spawn_translation_worker(
         app,

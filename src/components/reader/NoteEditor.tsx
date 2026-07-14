@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ReaderPopupPosition } from "@/store/readerStore";
 
 const NoteSchema = z.object({
-  body: z.string(),
+  body: z.string().trim().min(1, "Note cannot be empty."),
 });
 
 type NoteForm = z.infer<typeof NoteSchema>;
@@ -37,7 +37,6 @@ export function NoteEditor({
     handleSubmit,
     register,
     reset,
-    setError,
   } = useForm<NoteForm>({
     defaultValues: {
       body: initialBody,
@@ -72,15 +71,7 @@ export function NoteEditor({
   const handleValidSubmit = async (data: NoteForm) => {
     const trimmedBody = data.body.trim();
 
-    if (!trimmedBody && !onDelete) {
-      setError("body", {
-        message: "Note cannot be empty.",
-        type: "manual",
-      });
-      return;
-    }
-
-    await onSave(data.body);
+    await onSave(trimmedBody);
   };
 
   const popupWidth = 460;
