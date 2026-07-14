@@ -1325,7 +1325,62 @@ export async function createEpubBridge({
     applyHighlights();
     applyNotes();
 
+    // Highlight rects and note markers are positioned from the layout at the
+    // moment they are drawn. Any later reflow of the chapter document —
+    // images or fonts finishing loading, translation paragraphs being
+    // injected, repagination — leaves them stranded at stale coordinates, so
+    // re-render annotations whenever the document's laid-out size changes.
+    let annotationRefreshFrame: number | null = null;
+    const measureDocumentSize = () => {
+      const root = contents.document.documentElement;
+      const body = contents.document.body;
+      return [
+        root?.scrollWidth ?? 0,
+        root?.scrollHeight ?? 0,
+        body?.scrollWidth ?? 0,
+        body?.scrollHeight ?? 0,
+      ].join("x");
+    };
+    let lastObservedDocumentSize = measureDocumentSize();
+
+    const refreshAnnotationsOnReflow = () => {
+      const nextSize = measureDocumentSize();
+      if (nextSize === lastObservedDocumentSize) {
+        return;
+      }
+
+      lastObservedDocumentSize = nextSize;
+
+      if (annotationRefreshFrame !== null) {
+        window.cancelAnimationFrame(annotationRefreshFrame);
+      }
+
+      annotationRefreshFrame = window.requestAnimationFrame(() => {
+        annotationRefreshFrame = null;
+        invalidateRenderedAnnotations();
+        applyHighlights();
+        applyNotes();
+      });
+    };
+
+    const reflowObserver =
+      typeof ResizeObserver === "function" ? new ResizeObserver(refreshAnnotationsOnReflow) : null;
+    if (contents.document.body) {
+      reflowObserver?.observe(contents.document.body);
+    }
+    if (contents.document.documentElement) {
+      reflowObserver?.observe(contents.document.documentElement);
+    }
+    // epub.js's own content-expansion detector catches cases a ResizeObserver
+    // inside the iframe can miss (e.g. column count changes).
+    contents.on("resize", refreshAnnotationsOnReflow);
+
     contentCleanupCallbacks.add(() => {
+      reflowObserver?.disconnect();
+      contents.off("resize", refreshAnnotationsOnReflow);
+      if (annotationRefreshFrame !== null) {
+        window.cancelAnimationFrame(annotationRefreshFrame);
+      }
       contents.off("selected", handleContentsSelected);
       if (selectionSyncTimeout !== null) {
         window.clearTimeout(selectionSyncTimeout);

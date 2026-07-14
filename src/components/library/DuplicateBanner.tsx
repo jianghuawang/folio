@@ -28,9 +28,9 @@ export function DuplicateBanner({ titles, onDismiss }: DuplicateBannerProps) {
       {titles.map((title) => (
         <div
           key={title}
-          className="rounded-full border border-[--color-border-strong] bg-[--color-bg-surface] px-4 py-3 text-sm text-[--color-text-primary] shadow-popup"
+          className="animate-fade-in rounded-[10px] border border-white/[0.12] bg-[#2c2c2e]/90 px-4 py-2.5 text-center text-[13px] text-white/85 shadow-popup backdrop-blur-xl"
         >
-          &apos;{title}&apos; is already in your library.
+          “{title}” is already in your library.
         </div>
       ))}
     </div>,

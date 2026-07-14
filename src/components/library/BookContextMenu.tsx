@@ -29,8 +29,8 @@ function MenuButton({
       type="button"
       onClick={onClick}
       className={[
-        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-white/10",
-        destructive ? "text-[--color-destructive]" : "text-[--color-text-primary]",
+        "flex h-[26px] w-full items-center gap-[7px] rounded-[5px] px-2 text-left text-[13px] hover:bg-[#0a84ff] hover:text-white",
+        destructive ? "text-[#ff453a]" : "text-white/90",
       ].join(" ")}
     >
       {icon}
@@ -80,8 +80,8 @@ export function BookContextMenu({
       return null;
     }
 
-    const menuWidth = 220;
-    const menuHeight = 132;
+    const menuWidth = 210;
+    const menuHeight = 118;
 
     return {
       x: Math.min(position.x, window.innerWidth - menuWidth - 16),
@@ -96,11 +96,11 @@ export function BookContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-50 w-[220px] overflow-hidden rounded-md border border-[--color-border-strong] bg-[--color-bg-surface] py-1 shadow-popup"
+      className="animate-fade-in fixed z-50 w-[210px] rounded-[10px] border border-white/[0.14] bg-[#2c2c2e]/90 p-1 shadow-popup backdrop-blur-2xl"
       style={{ left: clampedPosition.x, top: clampedPosition.y }}
     >
       <MenuButton
-        icon={<BookOpen className="h-4 w-4" />}
+        icon={<BookOpen className="h-[14px] w-[14px] stroke-[1.8]" />}
         onClick={() => {
           onDismiss();
           onOpenBook();
@@ -109,7 +109,7 @@ export function BookContextMenu({
         Open
       </MenuButton>
       <MenuButton
-        icon={<Info className="h-4 w-4" />}
+        icon={<Info className="h-[14px] w-[14px] stroke-[1.8]" />}
         onClick={() => {
           onDismiss();
           onShowInfo();
@@ -117,10 +117,10 @@ export function BookContextMenu({
       >
         Book Info…
       </MenuButton>
-      <Separator className="my-1 bg-white/10" />
+      <Separator className="mx-2 my-1 w-auto bg-white/[0.14]" />
       <MenuButton
         destructive
-        icon={<Trash2 className="h-4 w-4" />}
+        icon={<Trash2 className="h-[14px] w-[14px] stroke-[1.8]" />}
         onClick={() => {
           onDismiss();
           onRemoveBook();

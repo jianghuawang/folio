@@ -24,6 +24,7 @@ import {
   useUpdateHighlight,
 } from "@/hooks/useHighlights";
 import { useDeleteNote, useNotes, useSaveNote, useUpdateNote } from "@/hooks/useNotes";
+import { isMacOS } from "@/lib/platform";
 import { FolioError } from "@/lib/tauri-commands";
 import { useReadingSettings, useUpdateReadingSettings } from "@/hooks/useReadingSettings";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -620,6 +621,11 @@ export default function ReaderWindow() {
       ].join(" ")}
     >
       <div className="group relative h-full w-full overflow-hidden">
+        {/* Overlay title bar on macOS: the top strip doubles as a drag handle. */}
+        {isMacOS ? (
+          <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-6" />
+        ) : null}
+
         <EpubViewer
           bilingualMode={translation.bilingualMode}
           book={book}

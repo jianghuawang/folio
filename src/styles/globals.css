@@ -94,6 +94,13 @@
   #epub-container {
     overscroll-behavior: none;
   }
+
+  /* The library window on macOS renders over an NSVisualEffectView sidebar
+     material; the body must stay transparent so vibrancy shows through the
+     sidebar column. Content panes paint their own opaque backgrounds. */
+  body.vibrant-window {
+    background: transparent;
+  }
 }
 
 /* ── Book card animations ── */

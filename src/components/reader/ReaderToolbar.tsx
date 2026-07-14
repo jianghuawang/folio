@@ -9,6 +9,7 @@ import type { ReactNode, Ref } from "react";
 
 import { DisplaySettingsPopover } from "@/components/reader/DisplaySettingsPopover";
 import { Button } from "@/components/ui/button";
+import { isMacOS } from "@/lib/platform";
 import type { ReaderAnnotationsTab } from "@/store/readerStore";
 import type { ReadingSettings } from "@/types/settings";
 
@@ -41,6 +42,15 @@ function isDarkReaderTheme(theme: ReadingSettings["theme"]) {
   return theme === "dark";
 }
 
+function clusterClassName(darkTheme: boolean) {
+  return [
+    "flex items-center gap-0.5 rounded-full p-1 backdrop-blur-xl",
+    darkTheme
+      ? "border border-white/[0.09] bg-[#28282a]/85 shadow-[0_0.5px_0_rgba(255,255,255,0.08)_inset,0_10px_30px_rgba(0,0,0,0.3)]"
+      : "border border-black/[0.06] bg-white/85 shadow-[0_0.5px_0_rgba(255,255,255,0.7)_inset,0_10px_30px_rgba(0,0,0,0.1)]",
+  ].join(" ");
+}
+
 function ToolbarIconButton({
   active = false,
   buttonRef,
@@ -69,14 +79,14 @@ function ToolbarIconButton({
       onClick={onClick}
       ref={buttonRef}
       className={[
-        "h-10 w-10 rounded-full disabled:cursor-not-allowed disabled:opacity-40",
+        "h-9 w-9 rounded-full disabled:cursor-not-allowed disabled:opacity-40",
         active
           ? darkTheme
-            ? "bg-white/[0.1] text-white"
-            : "bg-black/10 text-black"
+            ? "bg-white/[0.14] text-white"
+            : "bg-black/[0.09] text-black"
           : darkTheme
-            ? "text-white/72 hover:bg-white/[0.07] hover:text-white/92"
-            : "text-black/70 hover:bg-black/[0.05] hover:text-black/85",
+            ? "text-white/70 hover:bg-white/[0.08] hover:text-white/95"
+            : "text-black/65 hover:bg-black/[0.05] hover:text-black/85",
       ].join(" ")}
       aria-label={label}
       title={label}
@@ -113,20 +123,18 @@ export function ReaderToolbar({
   const darkTheme = isDarkReaderTheme(readingSettings.theme);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-5 pt-3">
-      <div className="pointer-events-auto absolute left-5 top-5 flex items-center">
-        <div
-          ref={leftClusterRef}
-          className={[
-            "flex items-center gap-1 rounded-full p-1.5 backdrop-blur-[24px]",
-            darkTheme
-              ? "border border-white/[0.08] bg-[#323235]/88 shadow-[0_18px_48px_rgba(0,0,0,0.34)]"
-              : "border border-black/5 bg-white/88 shadow-[0_18px_48px_rgba(0,0,0,0.16)]",
-          ].join(" ")}
-        >
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
+      {/* Left cluster clears the macOS traffic lights. */}
+      <div
+        className={[
+          "pointer-events-auto absolute top-3 flex items-center",
+          isMacOS ? "left-[86px]" : "left-4",
+        ].join(" ")}
+      >
+        <div ref={leftClusterRef} className={clusterClassName(darkTheme)}>
           <ToolbarIconButton
             buttonRef={tocTriggerRef}
-            icon={<Menu className="h-5 w-5 stroke-[1.75]" />}
+            icon={<Menu className="h-[18px] w-[18px] stroke-[1.75]" />}
             active={tocOpen}
             label="Contents"
             onClick={onToggleToc}
@@ -134,7 +142,7 @@ export function ReaderToolbar({
           />
           <ToolbarIconButton
             buttonRef={highlightsTriggerRef}
-            icon={<Bookmark className="h-5 w-5 stroke-[1.75]" />}
+            icon={<Bookmark className="h-[18px] w-[18px] stroke-[1.75]" />}
             active={annotationsOpen && annotationsTab === "highlights"}
             label="Highlights"
             onClick={onOpenHighlights}
@@ -142,7 +150,7 @@ export function ReaderToolbar({
           />
           <ToolbarIconButton
             buttonRef={notesTriggerRef}
-            icon={<NotebookTabs className="h-5 w-5 stroke-[1.75]" />}
+            icon={<NotebookTabs className="h-[18px] w-[18px] stroke-[1.75]" />}
             active={annotationsOpen && annotationsTab === "notes"}
             label="Notes"
             onClick={onOpenNotes}
@@ -153,23 +161,15 @@ export function ReaderToolbar({
 
       <div
         className={[
-          "absolute left-1/2 top-7 max-w-[45vw] -translate-x-1/2 truncate px-4 text-center text-[15px] font-semibold tracking-[-0.02em]",
-          darkTheme ? "text-white/78" : "text-black/75",
+          "absolute left-1/2 top-3 flex h-11 max-w-[40vw] -translate-x-1/2 items-center px-4",
+          darkTheme ? "text-white/60" : "text-black/60",
         ].join(" ")}
       >
-        {title}
+        <span className="truncate text-[13px] font-semibold tracking-[-0.01em]">{title}</span>
       </div>
 
-      <div className="pointer-events-auto absolute right-5 top-5 flex items-center">
-        <div
-          ref={translationClusterRef}
-          className={[
-            "flex items-center gap-1 rounded-full p-1.5 backdrop-blur-[20px]",
-            darkTheme
-              ? "border border-white/[0.08] bg-[#323235]/92 shadow-[0_18px_48px_rgba(0,0,0,0.34)]"
-              : "border border-[#ece7df] bg-white/92 shadow-[0_18px_48px_rgba(0,0,0,0.14)]",
-          ].join(" ")}
-        >
+      <div className="pointer-events-auto absolute right-4 top-3 flex items-center">
+        <div ref={translationClusterRef} className={clusterClassName(darkTheme)}>
           <DisplaySettingsPopover
             disabled={false}
             onUpdate={onUpdateReadingSettings}
@@ -179,7 +179,7 @@ export function ReaderToolbar({
           <ToolbarIconButton
             buttonRef={translationTriggerRef}
             disabled={!canTranslate}
-            icon={<Languages className="h-5 w-5 stroke-[1.75]" />}
+            icon={<Languages className="h-[18px] w-[18px] stroke-[1.75]" />}
             active={translationOpen}
             label="Translate book"
             onClick={onToggleTranslation}
@@ -191,10 +191,10 @@ export function ReaderToolbar({
               type="button"
               onClick={onToggleBilingualMode}
               className={[
-                "rounded-full px-3 py-2 text-sm font-medium transition",
+                "h-9 rounded-full px-3 text-[13px] font-medium transition-colors",
                 darkTheme
-                  ? "text-white/78 hover:bg-white/[0.07] hover:text-white/92"
-                  : "text-black/70 hover:bg-black/[0.05] hover:text-black/85",
+                  ? "text-white/70 hover:bg-white/[0.08] hover:text-white/95"
+                  : "text-black/65 hover:bg-black/[0.05] hover:text-black/85",
               ].join(" ")}
             >
               Bilingual
@@ -203,7 +203,7 @@ export function ReaderToolbar({
 
           {canExport ? (
             <ToolbarIconButton
-              icon={<Download className="h-5 w-5 stroke-[1.75]" />}
+              icon={<Download className="h-[18px] w-[18px] stroke-[1.75]" />}
               label="Export bilingual ePub"
               onClick={onExport}
               theme={readingSettings.theme}

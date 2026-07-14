@@ -74,7 +74,7 @@ pub async fn open_reader_window<R: Runtime>(
     }
 
     eprintln!("[reader] building new window label={window_label}");
-    let window = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         &app,
         window_label.clone(),
         WebviewUrl::App("/reader".into()),
@@ -83,9 +83,14 @@ pub async fn open_reader_window<R: Runtime>(
     .inner_size(900.0, 700.0)
     .min_inner_size(600.0, 500.0)
     .center()
-    .visible(false)
-    .build()
-    .map_err(|error| {
+    .visible(false);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+
+    let window = builder.build().map_err(|error| {
         eprintln!("[reader] build() failed: {error}");
         error.to_string()
     })?;

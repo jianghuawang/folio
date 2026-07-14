@@ -12,6 +12,7 @@ import { Sidebar } from "@/components/library/Sidebar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useBooks, useDeleteBook, useImportBooks } from "@/hooks/useBooks";
 import { useLibraryFilter } from "@/hooks/useLibraryFilter";
+import { isMacOS } from "@/lib/platform";
 import { openReaderWindow } from "@/lib/tauri-commands";
 import { useLibraryStore } from "@/store/libraryStore";
 import type { Book } from "@/types/book";
@@ -30,12 +31,12 @@ function InlineError({
   onRetry: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-[--color-border] bg-[--color-bg-elevated] p-6 text-center">
-      <p className="text-sm text-[--color-destructive]">{message}</p>
+    <div className="mx-auto max-w-md rounded-[12px] border border-white/[0.08] bg-white/[0.04] p-6 text-center">
+      <p className="text-[13px] text-[--color-destructive]">{message}</p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-3 text-sm text-[--color-primary] underline underline-offset-4"
+        className="mt-3 text-[13px] font-medium text-[#0a84ff] transition-colors hover:text-[#409cff]"
       >
         Retry
       </button>
@@ -76,7 +77,7 @@ export default function LibraryWindow() {
   });
 
   const activeQuery = isSearchActive || section === "all" ? allBooksQuery : recentBooksQuery;
-  const heading = isSearchActive ? `${filteredBooks.length} books match "${debouncedQuery}"` : section === "recent" ? "Recently Read" : "All";
+  const heading = isSearchActive ? `${filteredBooks.length} books match "${debouncedQuery}"` : section === "recent" ? "Recently Read" : "All Books";
   const isLibraryEmpty = !allBooksQuery.isLoading && (allBooksQuery.data?.length ?? 0) === 0;
   const hasSearchNoResults = isSearchActive && !activeQuery.isLoading && filteredBooks.length === 0;
   const isGridLoading = activeQuery.isLoading;
@@ -182,33 +183,51 @@ export default function LibraryWindow() {
   const deleteTargetBook = contextMenu?.book ?? null;
 
   useEffect(() => {
-    const standardLayoutQuery = window.matchMedia("(min-width: 700px) and (max-width: 999px)");
+    if (!isMacOS) {
+      return undefined;
+    }
+
+    // Let the macOS sidebar vibrancy material show through behind the window.
+    document.body.classList.add("vibrant-window");
+
+    return () => {
+      document.body.classList.remove("vibrant-window");
+    };
+  }, []);
+
+  useEffect(() => {
+    const compactLayoutQuery = window.matchMedia("(max-width: 999px)");
 
     const syncSidebarSheet = () => {
-      if (!standardLayoutQuery.matches) {
+      if (!compactLayoutQuery.matches) {
         setSidebarSheetOpen(false);
       }
     };
 
     syncSidebarSheet();
-    standardLayoutQuery.addEventListener("change", syncSidebarSheet);
+    compactLayoutQuery.addEventListener("change", syncSidebarSheet);
 
     return () => {
-      standardLayoutQuery.removeEventListener("change", syncSidebarSheet);
+      compactLayoutQuery.removeEventListener("change", syncSidebarSheet);
     };
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#1e1e1e] text-[--color-text-primary]">
+    <main
+      className={[
+        "flex h-screen w-full overflow-hidden text-[--color-text-primary]",
+        isMacOS ? "bg-transparent" : "bg-[#232326]",
+      ].join(" ")}
+    >
       <DuplicateBanner titles={duplicateTitles} onDismiss={clearDuplicateTitles} />
       <DropZone onFiles={runImport} onVisibilityChange={setDropZoneVisible} />
 
       {dropZoneVisible ? (
-        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-black/50 px-6">
-          <div className="rounded-[20px] border border-dashed border-[--color-primary] bg-[--color-bg-surface]/95 px-10 py-8 text-center shadow-popup">
-            <p className="text-lg font-medium text-[--color-text-primary]">Drop .epub files here</p>
-            <p className="mt-2 text-sm text-[--color-text-muted]">
-              Folio will import them into its managed library.
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-6 backdrop-blur-[2px]">
+          <div className="rounded-[14px] border border-dashed border-[#0a84ff]/80 bg-[#28282a]/95 px-12 py-9 text-center shadow-popup">
+            <p className="text-[15px] font-semibold text-white/90">Drop ePub files to import</p>
+            <p className="mt-1.5 text-[13px] text-white/45">
+              Folio will add them to your library.
             </p>
           </div>
         </div>
@@ -217,82 +236,79 @@ export default function LibraryWindow() {
       <Sheet open={sidebarSheetOpen} onOpenChange={setSidebarSheetOpen}>
         <SheetContent
           side="left"
-          className="w-[200px] border-r-0 bg-[#1e1e1e] p-0 text-[--color-text-primary] sm:max-w-[200px]"
+          className="w-[230px] border-r border-white/[0.06] bg-[#232326] p-0 text-[--color-text-primary] sm:max-w-[230px]"
         >
           <Sidebar
             activeSection={section}
-            allCount={allBooksQuery.data?.length ?? 0}
-            recentCount={recentBooksQuery.data?.length ?? 0}
             onSectionChange={(nextSection) => {
               setSection(nextSection);
               setSidebarSheetOpen(false);
             }}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onClearSearch={clearSearch}
             variant="sheet"
           />
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-screen bg-[#1e1e1e]">
-        <Sidebar
-          activeSection={section}
-          allCount={allBooksQuery.data?.length ?? 0}
-          recentCount={recentBooksQuery.data?.length ?? 0}
-          onSectionChange={setSection}
+      <Sidebar
+        activeSection={section}
+        onSectionChange={setSection}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onClearSearch={clearSearch}
+      />
+
+      <section className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#1e1e1e] min-[1000px]:border-l min-[1000px]:border-black/50">
+        <LibraryToolbar
+          isImporting={importInProgress || importBooksMutation.isPending}
+          onImportClick={() => void handleImportClick()}
+          onToggleSidebar={() => setSidebarSheetOpen(true)}
         />
 
-        <section className="flex min-h-screen flex-1 flex-col">
-          <LibraryToolbar
-            isImporting={importInProgress || importBooksMutation.isPending}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            onClearSearch={clearSearch}
-            onImportClick={() => void handleImportClick()}
-            onToggleSidebar={() => setSidebarSheetOpen(true)}
-          />
-
-          <div className="flex-1 px-8 pb-12 pt-4 min-[1000px]:px-10 min-[1000px]:pt-4">
-            <div className="w-full max-w-[1504px]">
-              <div className="mb-8">
-                <h1 className="text-[28px] font-bold leading-[1.1] tracking-[-0.02em] text-white min-[1000px]:text-[34px]">
-                  {heading}
-                </h1>
-                {isSearchActive ? (
-                  <p className="mt-3 text-sm text-white/42">Showing matches for “{debouncedQuery}”.</p>
-                ) : null}
-              </div>
-
-              {activeQuery.error ? (
-                <InlineError
-                  message="Failed to load the library."
-                  onRetry={() => void activeQuery.refetch()}
-                />
-              ) : isLibraryEmpty && !isSearchActive ? (
-                <EmptyState onImportClick={() => void handleImportClick()} />
-              ) : hasSearchNoResults ? (
-                <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
-                  <p className="text-lg text-[--color-text-primary]">
-                    No books match &quot;{debouncedQuery}&quot;.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={clearSearch}
-                    className="mt-3 text-sm text-[--color-primary] underline underline-offset-4"
-                  >
-                    Clear Search
-                  </button>
-                </div>
-              ) : (
-                <BookGrid
-                  books={filteredBooks}
-                  isLoading={isGridLoading}
-                  onOpen={handleOpenBook}
-                  onContextMenu={openContextMenu}
-                />
-              )}
+        <div className="flex-1 overflow-y-auto px-8 pb-12 pt-1 min-[1000px]:px-10">
+          <div className="w-full max-w-[1504px]">
+            <div className="mb-7">
+              <h1 className="text-[26px] font-bold leading-[1.15] tracking-[-0.02em] text-white">
+                {heading}
+              </h1>
+              {isSearchActive ? (
+                <p className="mt-2 text-[13px] text-white/45">Showing matches for “{debouncedQuery}”.</p>
+              ) : null}
             </div>
+
+            {activeQuery.error ? (
+              <InlineError
+                message="Failed to load the library."
+                onRetry={() => void activeQuery.refetch()}
+              />
+            ) : isLibraryEmpty && !isSearchActive ? (
+              <EmptyState onImportClick={() => void handleImportClick()} />
+            ) : hasSearchNoResults ? (
+              <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
+                <p className="text-[15px] font-medium text-white/85">
+                  No books match &quot;{debouncedQuery}&quot;
+                </p>
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="mt-2.5 text-[13px] font-medium text-[#0a84ff] transition-colors hover:text-[#409cff]"
+                >
+                  Clear Search
+                </button>
+              </div>
+            ) : (
+              <BookGrid
+                books={filteredBooks}
+                isLoading={isGridLoading}
+                onOpen={handleOpenBook}
+                onContextMenu={openContextMenu}
+              />
+            )}
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       <BookContextMenu
         open={Boolean(contextMenu)}
