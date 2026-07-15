@@ -44,11 +44,11 @@
       "msi"
     ],
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/folio/32x32.png",
+      "icons/folio/128x128.png",
+      "icons/folio/128x128@2x.png",
+      "icons/folio/icon.icns",
+      "icons/folio/icon.ico"
     ],
     "windows": {
       "webviewInstallMode": {

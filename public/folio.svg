@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Folio app icon</title>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#161618"/>
+  <path
+    fill="#F5F0E8"
+    d="M326 240h330l108 108v20c0 24-20 44-44 44H480v82h164c24 0 44 20 44 44v48c0 24-20 44-44 44H480v122c0 24-20 44-44 44H326c-24 0-44-20-44-44V284c0-24 20-44 44-44Z"
+  />
+  <path
+    fill="#0A84FF"
+    d="M656 240v76c0 18 14 32 32 32h76L656 240Z"
+  />
+</svg>
