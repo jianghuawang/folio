@@ -103,7 +103,14 @@ export const useReaderStore = create<ReaderStore>((set) => ({
   selection: null,
   tocOpen: false,
   translationSheetOpen: false,
-  clearAnnotationMeta: () => set({ annotationMetaByKey: {} }),
+  // Keep the same object reference when already empty; a fresh {} on every call
+  // re-renders subscribers and can feed an effect/set loop while queries load.
+  clearAnnotationMeta: () =>
+    set((state) =>
+      Object.keys(state.annotationMetaByKey).length === 0
+        ? state
+        : { annotationMetaByKey: {} },
+    ),
   clearInvalidPositionRestore: () => set({ invalidPositionRestore: false }),
   clearPendingNavigationCfi: () => set({ pendingNavigationCfi: null }),
   clearSelection: () => set({ selection: null }),

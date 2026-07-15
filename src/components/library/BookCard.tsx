@@ -56,12 +56,14 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
         window.clearTimeout(fallbackTimer);
         el.removeEventListener("animationend", finishOpen);
         el.classList.remove("animate-book-press");
+        openingRef.current = false;
         onOpen(book.id);
       };
       const fallbackTimer = window.setTimeout(finishOpen, 500);
       el.addEventListener("animationend", finishOpen, { once: true });
       el.classList.add("animate-book-press");
     } else {
+      openingRef.current = false;
       onOpen(book.id);
     }
   }, [book.id, onOpen]);
@@ -70,11 +72,6 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
     <article
       className="animate-book-card-in group w-[160px] cursor-default select-none"
       style={{ animationDelay: `${animationDelay}ms` }}
-      onDoubleClick={(event) => {
-        if (!(event.target as HTMLElement).closest("[data-book-actions]")) {
-          handleOpen();
-        }
-      }}
       onContextMenu={(event) => {
         event.preventDefault();
         onContextMenu(book, event.clientX, event.clientY);
@@ -84,6 +81,7 @@ export function BookCard({ book, onOpen, onContextMenu, animationDelay = 0 }: Bo
       <button
         ref={coverRef}
         type="button"
+        onClick={handleOpen}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();

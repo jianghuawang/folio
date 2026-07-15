@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
+import { ReaderSelect } from "@/components/reader/ReaderSelect";
 import { Button } from "@/components/ui/button";
 import type { TranslationJob } from "@/types/translation";
 
@@ -18,11 +19,9 @@ interface TranslationSheetProps {
   pending: boolean;
 }
 
-const PANEL_MAX_WIDTH_PX = 420;
+const PANEL_MAX_WIDTH_PX = 320;
 const PANEL_VIEWPORT_PADDING_PX = 16;
-const PANEL_VERTICAL_OFFSET_PX = 18;
-const NOTCH_SIZE_PX = 24;
-const NOTCH_HORIZONTAL_PADDING_PX = 28;
+const PANEL_VERTICAL_OFFSET_PX = 10;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -52,20 +51,9 @@ function resolvePanelPosition({
     viewportWidth - PANEL_VIEWPORT_PADDING_PX - panelWidth,
   );
   const top = (clusterRect?.bottom ?? anchorRect?.bottom ?? 64) + PANEL_VERTICAL_OFFSET_PX;
-  const notchTargetX = anchorRect
-    ? anchorRect.left + anchorRect.width / 2
-    : clusterRect
-      ? clusterRect.left + clusterRect.width / 2
-      : panelCenterX;
-  const notchCenterX = clamp(
-    notchTargetX - left,
-    NOTCH_HORIZONTAL_PADDING_PX,
-    panelWidth - NOTCH_HORIZONTAL_PADDING_PX,
-  );
 
   return {
     left,
-    notchLeft: notchCenterX - NOTCH_SIZE_PX / 2,
     top,
     width: panelWidth,
   };
@@ -163,90 +151,78 @@ export function TranslationSheet({
         }}
       >
         <div
-          className="pointer-events-auto relative w-full origin-top-right animate-in zoom-in-95 [transition-duration:160ms] ease-out"
+          className="animate-fade-in pointer-events-auto relative w-full"
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <div
-            className="absolute top-0 h-6 w-6 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/88"
-            style={{ left: panelPosition.notchLeft }}
-          />
+          <div className="rounded-[12px] border border-black/[0.08] bg-white/95 p-4 text-black shadow-popup backdrop-blur-2xl">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40">
+                  Translate Book
+                </p>
+                <p className="text-[12px] leading-5 text-black/45">
+                  Original text remains visible alongside the translation. This may use
+                  API credits.
+                </p>
+              </div>
 
-          <div className="overflow-hidden rounded-[34px] border border-black/10 bg-white/92 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px]">
-            <div className="border-b border-black/10 px-6 py-5">
-              <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-black/70">
-                Translate Book
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-black/45">
-                Original text remains visible alongside the translation. This may use
-                API credits.
-              </p>
-            </div>
-
-            <div className="space-y-4 px-6 py-5">
-              <div className="rounded-[28px] border border-black/10 bg-white/66 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+              <div className="space-y-1.5">
                 <label
-                  className="text-sm font-medium text-black/50"
+                  className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40"
                   htmlFor="translation-language"
                 >
-                  Translate to
+                  Translate To
                 </label>
-
-                <div className="relative mt-3">
-                  <select
-                    id="translation-language"
-                    value={selectedLanguage}
-                    onChange={(event) => setSelectedLanguage(event.target.value)}
-                    className="h-14 w-full appearance-none rounded-full border border-black/10 bg-white px-5 pr-12 text-[16px] font-medium text-black [color-scheme:light] outline-none transition focus:border-black/20 focus:bg-white"
-                  >
-                    <option value="">Select language</option>
-                    {availableLanguages.map((language) => (
-                      <option key={language} value={language}>
-                        {language}
-                      </option>
-                    ))}
-                  </select>
-
-                  <ChevronDown className="pointer-events-none absolute right-5 top-1/2 h-5 w-5 -translate-y-1/2 text-black/35" />
-                </div>
+                <ReaderSelect
+                  ariaLabel="Translate to"
+                  id="translation-language"
+                  placeholder="Select language"
+                  options={availableLanguages.map((language) => ({
+                    label: language,
+                    value: language,
+                  }))}
+                  value={selectedLanguage}
+                  onChange={setSelectedLanguage}
+                />
               </div>
 
               {isAlreadyComplete ? (
-                <p className="rounded-[22px] border border-black/10 bg-black/[0.03] px-4 py-3 text-sm leading-6 text-black/55">
+                <p className="rounded-[8px] border border-black/[0.08] bg-black/[0.03] px-3 py-2 text-[12px] leading-5 text-black/55">
                   This book has already been translated to {selectedLanguage}. Starting
                   again will replace the existing version.
                 </p>
               ) : null}
 
               {errorMessage ? (
-                <p className="rounded-[22px] border border-[#ff3b3026] bg-[#ff3b3010] px-4 py-3 text-sm leading-6 text-[#c53929]">
+                <p className="rounded-[8px] border border-[#ff3b3026] bg-[#ff3b3010] px-3 py-2 text-[12px] leading-5 text-[#c53929]">
                   {errorMessage}
                 </p>
               ) : null}
-            </div>
 
-            <div className="flex flex-col-reverse gap-3 border-t border-black/10 px-6 py-4 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                className="rounded-full border border-black/10 bg-white/70 px-5 text-black/55 hover:bg-white hover:text-black/70"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                className="min-w-[182px] rounded-full bg-black px-6 text-white hover:bg-black/85 disabled:bg-black/20 disabled:text-white/80"
-                disabled={!selectedLanguage || pending}
-                onClick={() => void onStart(selectedLanguage, isAlreadyComplete)}
-              >
-                {pending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : isAlreadyComplete ? (
-                  "Re-translate"
-                ) : (
-                  "Start Translation"
-                )}
-              </Button>
+              <div className="flex items-center justify-end gap-2 pt-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-8 rounded-[7px] border border-black/[0.08] bg-black/[0.04] px-3 text-[13px] font-medium text-black/65 hover:bg-black/[0.07] hover:text-black/85"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="h-8 min-w-[132px] rounded-[7px] bg-black px-4 text-[13px] font-medium text-white hover:bg-black/85 disabled:bg-black/20 disabled:text-white/80"
+                  disabled={!selectedLanguage || pending}
+                  onClick={() => void onStart(selectedLanguage, isAlreadyComplete)}
+                >
+                  {pending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : isAlreadyComplete ? (
+                    "Re-translate"
+                  ) : (
+                    "Start Translation"
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

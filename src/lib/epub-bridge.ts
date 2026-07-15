@@ -770,7 +770,9 @@ export async function createEpubBridge({
   const assetUrl = convertFileSrc(book.file_path);
   const epubBook = Epub(assetUrl) as EpubBook;
   const rendition = epubBook.renderTo(container, {
-    allowScriptedContent: false,
+    // Must stay true: without allow-scripts WKWebView's iframe sandbox breaks
+    // in-iframe selection and keydown events (selection popup, arrow paging).
+    allowScriptedContent: true,
     flow: "paginated",
     height: "100%",
     width: "100%",

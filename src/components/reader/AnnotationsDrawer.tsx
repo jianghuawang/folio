@@ -20,10 +20,8 @@ const HIGHLIGHT_DOT_CLASS_NAMES: Record<Highlight["color"], string> = {
   "#BF5AF2": "bg-[#BF5AF2]",
 };
 
-const ANNOTATIONS_PANEL_MAX_WIDTH_PX = 604;
-const NOTCH_HORIZONTAL_PADDING_PX = 28;
-const NOTCH_SIZE_PX = 24;
-const PANEL_VERTICAL_OFFSET_PX = 18;
+const ANNOTATIONS_PANEL_MAX_WIDTH_PX = 400;
+const PANEL_VERTICAL_OFFSET_PX = 10;
 const PANEL_VIEWPORT_PADDING_PX = 16;
 
 interface AnnotationsDrawerProps {
@@ -79,37 +77,26 @@ function resolvePanelPosition({
     viewportWidth - PANEL_VIEWPORT_PADDING_PX - panelWidth,
   );
   const top = (clusterRect?.bottom ?? anchorRect?.bottom ?? 64) + PANEL_VERTICAL_OFFSET_PX;
-  const notchTargetX = anchorRect
-    ? anchorRect.left + anchorRect.width / 2
-    : clusterRect
-      ? clusterRect.left + clusterRect.width / 2
-      : panelCenterX;
-  const notchCenterX = clamp(
-    notchTargetX - left,
-    NOTCH_HORIZONTAL_PADDING_PX,
-    panelWidth - NOTCH_HORIZONTAL_PADDING_PX,
-  );
 
   return {
     left,
-    notchLeft: notchCenterX - NOTCH_SIZE_PX / 2,
     top,
     width: panelWidth,
   };
 }
 
 function EmptyState({ message }: { message: string }) {
-  return <p className="px-6 py-6 text-sm text-black/45">{message}</p>;
+  return <p className="px-4 py-5 text-[13px] text-black/45">{message}</p>;
 }
 
 function InlineError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="px-6 py-6">
-      <p className="text-sm text-[--color-destructive]">Failed to load annotations.</p>
+    <div className="px-4 py-5">
+      <p className="text-[13px] text-[--color-destructive]">Failed to load annotations.</p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-2 text-xs text-[--color-primary] underline underline-offset-4"
+        className="mt-2 text-[12px] text-[--color-primary] underline underline-offset-4"
       >
         Retry
       </button>
@@ -209,59 +196,56 @@ export function AnnotationsDrawer({
         }}
       >
         <div
-          className="pointer-events-auto relative w-full origin-top-left animate-in zoom-in-95 [transition-duration:160ms] ease-out"
+          className="animate-fade-in pointer-events-auto relative w-full"
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <div
-            className="absolute top-0 h-6 w-6 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/88"
-            style={{ left: panelPosition.notchLeft }}
-          />
-
-          <div className="overflow-hidden rounded-[34px] border border-black/10 bg-white/84 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px]">
-            <div className="border-b border-black/10 px-6 py-5">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-black/70">
-                    Annotations
-                  </h2>
-                  <p className="mt-1 text-sm text-black/45">
-                    Browse highlights and notes for this book.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onExportHighlights}
-                  disabled={exportDisabled || exportPending}
-                  className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/70 px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {exportPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                  <span>Export Highlights</span>
-                </button>
-              </div>
-
-              {exportErrorMessage ? (
-                <p className="mt-3 text-sm text-[--color-destructive]">{exportErrorMessage}</p>
-              ) : null}
-            </div>
-
+          <div className="overflow-hidden rounded-[12px] border border-black/[0.08] bg-white/95 text-black shadow-popup backdrop-blur-2xl">
             <Tabs
               value={activeTab}
               onValueChange={(value) => onTabChange(value as ReaderAnnotationsTab)}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="border-b border-black/10 px-4 py-3">
-                <TabsList className="grid w-full max-w-[280px] grid-cols-2 rounded-full bg-black/[0.06]">
-                  <TabsTrigger value="highlights" className="rounded-full">
+              <div className="space-y-2.5 p-4 pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40">
+                    Annotations
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onExportHighlights}
+                    disabled={exportDisabled || exportPending}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-[7px] border border-black/[0.08] bg-black/[0.04] px-2.5 text-[12px] font-medium text-black/70 transition-colors hover:bg-black/[0.07] hover:text-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {exportPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    <span>Export</span>
+                  </button>
+                </div>
+
+                {exportErrorMessage ? (
+                  <p className="text-[12px] text-[--color-destructive]">{exportErrorMessage}</p>
+                ) : null}
+
+                <TabsList className="grid h-8 w-full grid-cols-2 gap-0.5 rounded-[8px] border border-black/[0.08] bg-black/[0.04] p-0.5">
+                  <TabsTrigger
+                    value="highlights"
+                    className="h-full rounded-[6px] text-[12px] font-medium text-black/50 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm"
+                  >
                     Highlights
                   </TabsTrigger>
-                  <TabsTrigger value="notes" className="rounded-full">
+                  <TabsTrigger
+                    value="notes"
+                    className="h-full rounded-[6px] text-[12px] font-medium text-black/50 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm"
+                  >
                     Notes
                   </TabsTrigger>
                 </TabsList>
               </div>
 
-              <TabsContent value="highlights" className="mt-0 min-h-0 max-h-[62vh] overflow-y-auto">
+              <TabsContent value="highlights" className="mt-0 min-h-0 max-h-[56vh] overflow-y-auto px-2 pb-2">
                 {highlightsLoading ? (
                   <EmptyState message="Loading highlights…" />
                 ) : highlightError ? (
@@ -269,11 +253,11 @@ export function AnnotationsDrawer({
                 ) : highlightItems.length === 0 ? (
                   <EmptyState message="No highlights yet. Select text to start highlighting." />
                 ) : (
-                  <div className="divide-y divide-black/10">
+                  <div className="space-y-0.5">
                     {highlightItems.map(({ highlight, meta }) => (
                       <div
                         key={highlight.id}
-                        className="group flex items-start gap-3 px-4 py-4 transition hover:bg-black/[0.03]"
+                        className="group flex items-start gap-2.5 rounded-[8px] px-2.5 py-2.5 transition-colors hover:bg-black/[0.05]"
                       >
                         <button
                           type="button"
@@ -282,15 +266,15 @@ export function AnnotationsDrawer({
                         >
                           <span
                             className={[
-                              "mt-1 h-3 w-3 shrink-0 rounded-full",
+                              "mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full",
                               HIGHLIGHT_DOT_CLASS_NAMES[highlight.color],
                             ].join(" ")}
                           />
                           <span className="min-w-0">
-                            <span className="line-clamp-2 block text-sm text-black/80">
+                            <span className="line-clamp-2 block text-[13px] leading-[1.45] text-black/80">
                               {highlight.text_excerpt}
                             </span>
-                            <span className="mt-1 block text-xs text-black/45">
+                            <span className="mt-1 block text-[11px] text-black/45">
                               {meta
                                 ? `${meta.chapterTitle} · ${formatPercent(meta.progress)}`
                                 : "Location unavailable"}
@@ -300,10 +284,10 @@ export function AnnotationsDrawer({
                         <button
                           type="button"
                           onClick={() => onDeleteHighlight(highlight.id)}
-                          className="rounded-full p-2 text-[--color-text-muted] opacity-0 transition hover:bg-black/[0.05] hover:text-[--color-destructive] group-hover:opacity-100"
+                          className="rounded-[6px] p-1.5 text-[--color-text-muted] opacity-0 transition-colors hover:bg-black/[0.07] hover:text-[--color-destructive] group-hover:opacity-100"
                           aria-label="Delete highlight"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     ))}
@@ -311,7 +295,7 @@ export function AnnotationsDrawer({
                 )}
               </TabsContent>
 
-              <TabsContent value="notes" className="mt-0 min-h-0 max-h-[62vh] overflow-y-auto">
+              <TabsContent value="notes" className="mt-0 min-h-0 max-h-[56vh] overflow-y-auto px-2 pb-2">
                 {notesLoading ? (
                   <EmptyState message="Loading notes…" />
                 ) : noteError ? (
@@ -319,24 +303,24 @@ export function AnnotationsDrawer({
                 ) : noteItems.length === 0 ? (
                   <EmptyState message="No notes yet. Select text and tap ✏ to add a note." />
                 ) : (
-                  <div className="divide-y divide-black/10">
+                  <div className="space-y-0.5">
                     {noteItems.map(({ note, meta }) => (
                       <div
                         key={note.id}
-                        className="group flex items-start gap-3 px-4 py-4 transition hover:bg-black/[0.03]"
+                        className="group flex items-start gap-2.5 rounded-[8px] px-2.5 py-2.5 transition-colors hover:bg-black/[0.05]"
                       >
                         <button
                           type="button"
                           onClick={() => onJumpToNote(note)}
                           className="min-w-0 flex-1 text-left"
                         >
-                          <span className="line-clamp-2 block text-sm text-black/80">
+                          <span className="line-clamp-2 block text-[13px] leading-[1.45] text-black/80">
                             {note.text_excerpt}
                           </span>
-                          <span className="mt-1 line-clamp-2 block text-xs text-black/55">
+                          <span className="mt-1 line-clamp-2 block text-[12px] leading-[1.45] text-black/55">
                             {note.body}
                           </span>
-                          <span className="mt-2 block text-xs text-black/45">
+                          <span className="mt-1.5 block text-[11px] text-black/45">
                             {meta
                               ? `${meta.chapterTitle} · ${formatPercent(meta.progress)}`
                               : "Location unavailable"}
@@ -345,10 +329,10 @@ export function AnnotationsDrawer({
                         <button
                           type="button"
                           onClick={() => onDeleteNote(note.id)}
-                          className="rounded-full p-2 text-[--color-text-muted] opacity-0 transition hover:bg-black/[0.05] hover:text-[--color-destructive] group-hover:opacity-100"
+                          className="rounded-[6px] p-1.5 text-[--color-text-muted] opacity-0 transition-colors hover:bg-black/[0.07] hover:text-[--color-destructive] group-hover:opacity-100"
                           aria-label="Delete note"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     ))}

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 
+import { ReaderSelect } from "@/components/reader/ReaderSelect";
 import { Button } from "@/components/ui/button";
 import type { ReadingSettings, ReadingSettingsUpdate } from "@/types/settings";
 
 const FONT_FAMILY_OPTIONS = [
-  { label: "Georgia", value: "Georgia" },
-  { label: "System Sans", value: "system-ui" },
-  { label: "Palatino", value: "Palatino" },
-  { label: "Monospace", value: "Menlo" },
+  { className: "font-[Georgia]", label: "Georgia", value: "Georgia" },
+  { className: "[font-family:system-ui]", label: "System Sans", value: "system-ui" },
+  { className: "[font-family:Palatino]", label: "Palatino", value: "Palatino" },
+  { className: "font-[Menlo]", label: "Monospace", value: "Menlo" },
 ] as const;
 
 const LINE_HEIGHT_OPTIONS = [
@@ -78,14 +79,6 @@ export function DisplaySettingsPopover({
   const controlSurfaceClassName = darkTheme
     ? "border border-white/[0.08] bg-white/[0.06]"
     : "border border-black/[0.08] bg-black/[0.04]";
-
-  const selectClassName = [
-    "h-8 w-full rounded-[7px] px-2.5 text-[13px] outline-none transition-colors",
-    controlSurfaceClassName,
-    darkTheme
-      ? "text-white focus:border-[#0a84ff]/60 [&>option]:bg-[#2c2c2e]"
-      : "text-black focus:border-[#0a84ff]/60",
-  ].join(" ");
 
   return (
     <div ref={containerRef} className="relative">
@@ -178,19 +171,15 @@ export function DisplaySettingsPopover({
 
             <div className="space-y-1.5">
               <p className={labelClassName}>Font</p>
-              <select
+              <ReaderSelect
+                ariaLabel="Font"
+                darkTheme={darkTheme}
+                options={FONT_FAMILY_OPTIONS}
                 value={settings.font_family}
-                onChange={(event) =>
-                  onUpdate({ font_family: event.target.value as ReadingSettings["font_family"] })
+                onChange={(fontFamily) =>
+                  onUpdate({ font_family: fontFamily as ReadingSettings["font_family"] })
                 }
-                className={selectClassName}
-              >
-                {FONT_FAMILY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="space-y-1.5">

@@ -93,6 +93,9 @@ function getLegacyNoteOnlyHighlight(note: Note, highlightById: Map<string, Highl
 
 const READER_WINDOW_LABEL_PREFIX = "reader-";
 
+// Stable fallback so effect dependencies don't churn while highlights load.
+const NO_HIGHLIGHTS: Highlight[] = [];
+
 function resolveBookId(): string | null {
   const queryBookId = new URLSearchParams(window.location.search).get("bookId")?.trim();
   if (queryBookId) {
@@ -173,7 +176,7 @@ export default function ReaderWindow() {
   const tocTriggerRef = useRef<HTMLButtonElement | null>(null);
   const translationClusterRef = useRef<HTMLDivElement | null>(null);
   const translationTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const allHighlights = highlightsQuery.data ?? [];
+  const allHighlights = highlightsQuery.data ?? NO_HIGHLIGHTS;
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();
