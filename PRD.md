@@ -136,8 +136,8 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 
 **Acceptance criteria:**
 - ✓ When user releases mouse button after selecting text in the reader, a floating popup bar appears 12px above the selection midpoint
-- ✓ Popup bar contains (left to right): five color swatches (Yellow `#FFD60A`, Green `#30D158`, Blue `#0A84FF`, Pink `#FF375F`, Purple `#BF5AF2`), a divider, a "Note" button (pencil icon), a divider, a "Translate" button (globe icon), a divider, a "Quote" button (image icon)
-- ✓ Popup bar is 320px wide, 44px tall, rounded corners (12px radius), white background with 1px border `#E5E5EA`, shadow `0 4px 16px rgba(0,0,0,0.15)` in Light/Sepia theme; dark variant in Dark theme
+- ✓ Popup bar contains (left to right): five color swatches (Yellow `#FFD60A`, Green `#30D158`, Blue `#0A84FF`, Pink `#FF375F`, Purple `#BF5AF2`), a divider, a "Note" button (pencil icon), a divider, an "Ask AI" button (sparkles icon; only shown when an OpenRouter API key is configured — see Feature 17), a divider, a "Translate" button (globe icon), a divider, a "Quote" button (image icon)
+- ✓ Popup bar is a pill (fully rounded), 44px tall, translucent glass background with subtle border and blur matching the reader toolbar chrome in Light/Sepia theme; dark variant in Dark theme
 - ✓ Clicking anywhere outside the popup or the selection dismisses the popup without action
 - ✓ Pressing Escape dismisses the popup without action
 
@@ -352,6 +352,28 @@ There is exactly one role. The app has no authentication, no cloud sync, and no 
 **Edge cases:**
 - No highlights exist → export action is disabled and helper text explains there is nothing to export
 - Write failure → inline error in the annotations dropdown with a retry affordance
+
+---
+
+### Feature 17: Ask AI About Selection
+
+**User story:** As a user, I can select a passage in the book and ask the AI a question about it so that I can understand difficult text, get context, or discuss the passage without leaving the reader.
+
+**Acceptance criteria:**
+- ✓ An "Ask AI" button (sparkles icon + label) appears in the text selection popup bar, only when an OpenRouter API key is configured
+- ✓ Clicking "Ask AI" opens a floating panel anchored near the selection showing the quoted passage (max 3 lines, italic), an input field, and a round send button
+- ✓ Submitting a question streams the AI answer word-by-word into the panel; before the first token arrives a "Thinking…" indicator with spinner is shown
+- ✓ While streaming, the send button is replaced by a Stop button; clicking Stop halts the stream and keeps the partial answer in the thread
+- ✓ Follow-up questions can be asked in the same panel; the conversation thread retains the selected passage and all prior turns as context
+- ✓ The AI receives the selected passage, surrounding chapter text, and the book's title/author as context; it answers in the language the question was asked in
+- ✓ Conversations are ephemeral: closing the panel (X, Escape, or clicking outside) discards the thread; no Q&A data is persisted
+- ✓ Enter sends the question; Shift+Enter inserts a newline; Escape closes the panel
+
+**Edge cases:**
+- No API key configured → "Ask AI" button is not rendered in the popup bar
+- Selection came from re-activating an existing highlight (no live selection range) → surrounding-context extraction is skipped; the passage text alone is sent
+- API key becomes invalid after opening the panel → inline error in the panel with a Retry action
+- Bilingual mode active → injected translation paragraphs are excluded from the surrounding context sent to the AI
 
 ---
 
@@ -623,12 +645,41 @@ Left cluster:                           Right cluster:
 ### Reader Window — Text Selection Popup Bar
 
 ```
-                  ┌───────────────────────────────────────────────────────┐
-                  │  [●Y] [●G] [●B] [●P] [●V]  │  [✎ Note]  │  [🌐]  │  [🖼]  │
-                  └───────────────────────────────────────────────────────┘
+                  ┌────────────────────────────────────────────────────────────────────┐
+                  │  [●Y] [●G] [●B] [●P] [●V]  │  [✎ Note]  │  [✦ Ask AI]  │  [🌐]  │  [🖼]  │
+                  └────────────────────────────────────────────────────────────────────┘
                                     ▲
                           (selected text below)
 ```
+
+(The `[✦ Ask AI]` button and its divider are rendered only when an OpenRouter API key is configured.)
+
+---
+
+### Reader Window — Ask AI Panel
+
+```
+                  ┌─────────────────────────────────────────────┐
+                  │  "exercitation ullamco laboris nisi ut       │
+                  │   aliquip ex ea commodo consequat…"          │
+                  │  ─────────────────────────────────────────  │
+                  │                     What does this passage  │
+                  │                     mean in plain terms? ▐  │
+                  │                                              │
+                  │  It describes the idea that rigorous         │
+                  │  practice — "exercitation" — is required     │
+                  │  before one can act freely…▌                 │
+                  │                                              │
+                  │  [INPUT: Ask about this passage…      ] [⏹] │
+                  └─────────────────────────────────────────────┘
+```
+
+- Quoted passage header: max 3 lines, italic, muted
+- User turns: right-aligned rounded pills; AI turns: plain prose, streamed word-by-word with a pulsing caret
+- Before the first token: spinner + "Thinking…"
+- While streaming the round send button `[↑]` becomes a Stop button `[⏹]`
+- Error state: inline red pill with message and a Retry link
+- Closes via Escape or clicking outside; the conversation is discarded on close
 
 ---
 
@@ -1010,6 +1061,7 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 | Translation job live progress | Tauri event channel | Emitted from Rust backend to webview |
 | Open reader windows registry | Tauri app state (Rust) | Map of book_id → WindowLabel |
 | Quote cover canvas render | Browser Canvas API | Discarded after PNG export |
+| Ask AI conversation thread | Reader webview JS | Passage, surrounding context, and message turns held in memory only; discarded when the Ask AI panel closes; never persisted |
 
 ### 6.3 Data Flow Between Pages
 
@@ -1041,6 +1093,7 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 | Testing API connection | "Test Connection" button shows spinner and is disabled; result appears inline after response |
 | Exporting bilingual epub | Progress dialog: "Generating bilingual ePub… {X}%" with cancel button |
 | Rendering quote cover (Save Image) | "Save Image" button shows spinner; native Save dialog opens after render (<2s) |
+| Ask AI awaiting first token | Spinner + "Thinking…" row in the Ask AI panel; replaced by the streamed answer as tokens arrive |
 
 ### 7.3 Error States
 
@@ -1055,6 +1108,10 @@ Keys stored: `llm_model`, `window_state_library`, `window_state_settings`, `wind
 | Network offline during translation | Translation auto-pauses; banner: "Translation paused (no internet connection)." Auto-resumes on reconnect |
 | Canvas render failure (quote cover) | Alert: "Could not generate image. Please try again." |
 | Saved CFI is invalid | Opens book at beginning; banner: "Your reading position could not be restored." |
+| Ask AI auth error | Inline red pill in panel: "Invalid API key. Check your key in Settings." with Retry link |
+| Ask AI rate limit | Inline red pill in panel: "Rate limit reached. Try again in {N}s." with Retry link |
+| Ask AI network error | Inline red pill in panel: "Network error. Check your connection and try again." with Retry link |
+| Ask AI stopped mid-answer | Stream halts immediately; the partial answer is kept as an assistant turn in the thread |
 | SQLite write failure | Alert: "An error occurred saving your data. Your changes may not be saved. ({error_code})" |
 
 ---

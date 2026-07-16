@@ -125,7 +125,9 @@ pub fn run() {
             commands::translations::get_translation_job,
             commands::translations::retry_failed_paragraphs,
             commands::export::export_bilingual_epub,
-            commands::export::export_highlights
+            commands::export::export_highlights,
+            commands::ask::ask_question,
+            commands::ask::cancel_ask
         ])
         .run(tauri::generate_context!())
         .expect("error while running Folio");

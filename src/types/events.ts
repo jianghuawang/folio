@@ -28,3 +28,19 @@ export interface TranslationPausedEvent {
 export interface ExportProgressEvent {
   percent: number;
 }
+
+export interface AskDeltaEvent {
+  request_id: string;
+  delta: string;
+}
+
+export interface AskCompleteEvent {
+  request_id: string;
+}
+
+export interface AskErrorEvent {
+  request_id: string;
+  code: string;
+  message: string;
+  retry_after_secs?: number;
+}

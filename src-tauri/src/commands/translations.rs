@@ -487,7 +487,7 @@ fn get_book_translation_source(
         .ok_or_else(|| "BOOK_NOT_FOUND".to_string())
 }
 
-fn read_llm_model(connection: &rusqlite::Connection) -> Result<String, String> {
+pub(crate) fn read_llm_model(connection: &rusqlite::Connection) -> Result<String, String> {
     let llm_model = connection
         .query_row(
             "SELECT value FROM app_settings WHERE key = 'llm_model'",

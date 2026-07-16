@@ -26,7 +26,7 @@ export function LibraryToolbar({
       <button
         type="button"
         onClick={onToggleSidebar}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white/85 min-[1000px]:hidden"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white/85 min-[1000px]:hidden"
         aria-label="Open library navigation"
       >
         <PanelLeftOpen className="h-4 w-4 stroke-[1.8]" />
@@ -46,7 +46,7 @@ export function LibraryToolbar({
         onClick={onImportClick}
         disabled={isImporting}
         title="Import ePub files"
-        className="inline-flex h-[28px] shrink-0 items-center justify-center gap-1 rounded-[7px] px-2.5 text-[13px] font-normal text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white/95 disabled:opacity-40"
+        className="inline-flex h-[28px] shrink-0 items-center justify-center gap-1 rounded-md px-2.5 text-[13px] font-normal text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white/95 disabled:opacity-40"
       >
         <Plus className="h-[15px] w-[15px] stroke-[2]" aria-hidden="true" />
         <span>{importLabel}</span>

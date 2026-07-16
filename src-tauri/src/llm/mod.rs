@@ -134,6 +134,25 @@ pub struct TranslationPausedEvent {
     pub retry_after_secs: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct AskDeltaEvent {
+    pub request_id: String,
+    pub delta: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AskCompleteEvent {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AskErrorEvent {
+    pub request_id: String,
+    pub code: String,
+    pub message: String,
+    pub retry_after_secs: Option<u64>,
+}
+
 pub fn repair_common_mojibake(text: &str) -> String {
     if !looks_like_common_mojibake(text) {
         return text.to_string();

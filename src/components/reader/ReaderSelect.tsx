@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 
+import { controlSurface, NESTED_RADIUS, panelSurface, Z } from "@/lib/panel-chrome";
+
 export interface ReaderSelectOption {
   /** Optional extra classes for the option row, e.g. a font-family preview. */
   className?: string;
@@ -124,17 +126,14 @@ export function ReaderSelect({
   };
 
   const triggerClassName = [
-    "flex h-8 w-full items-center justify-between gap-2 rounded-[7px] px-2.5 text-[13px] outline-none transition-colors",
-    darkTheme
-      ? "border border-white/[0.08] bg-white/[0.06] text-white focus-visible:border-[#0a84ff]/60"
-      : "border border-black/[0.08] bg-black/[0.04] text-black focus-visible:border-[#0a84ff]/60",
+    "flex h-8 w-full items-center justify-between gap-2 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:border-[#0a84ff]/60",
+    controlSurface(darkTheme ? "dark" : "light"),
+    darkTheme ? "text-white" : "text-black",
   ].join(" ");
 
   const menuClassName = [
-    "animate-fade-in absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[240px] overflow-y-auto rounded-[10px] border p-1 shadow-popup backdrop-blur-2xl",
-    darkTheme
-      ? "border-white/[0.12] bg-[#3a3a3c]/95"
-      : "border-black/[0.08] bg-white/95",
+    `animate-panel-in origin-top absolute left-0 right-0 top-[calc(100%+6px)] ${Z.modal} max-h-[240px] overflow-y-auto p-1`,
+    panelSurface(darkTheme ? "dark" : "light"),
   ].join(" ");
 
   const placeholderTextClassName = darkTheme ? "text-white/40" : "text-black/40";
@@ -186,7 +185,7 @@ export function ReaderSelect({
                 aria-selected={isSelected}
                 data-active={isActive || undefined}
                 className={[
-                  "flex h-8 w-full items-center justify-between gap-2 rounded-[6px] px-2.5 text-[13px] transition-colors",
+                  `flex h-8 w-full items-center justify-between gap-2 ${NESTED_RADIUS} px-2.5 text-[13px] transition-colors`,
                   isSelected ? "font-medium" : "",
                   rowTextClassName,
                   option.className ?? "",

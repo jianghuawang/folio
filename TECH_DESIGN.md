@@ -92,14 +92,15 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │       │   ├── reader.rs         ← save_reading_position, get_reading_settings, update_reading_settings, open_reader_window
 │       │   ├── translations.rs   ← start_translation, pause_translation, resume_translation, cancel_translation, get_translations, retry_failed_paragraphs
 │       │   ├── export.rs         ← export_bilingual_epub + export_highlights
-│       │   └── settings.rs       ← get_app_settings, save_app_settings, save_api_key, has_api_key, clear_api_key, test_openrouter_connection
+│       │   ├── settings.rs       ← get_app_settings, save_app_settings, save_api_key, has_api_key, clear_api_key, test_openrouter_connection
+│       │   └── ask.rs            ← ask_question, cancel_ask; streamed selection Q&A; per-request cancel flags
 │       ├── epub/
 │       │   ├── mod.rs            ← Public API for epub module
 │       │   ├── importer.rs       ← Copy file to App Support, extract metadata, compute SHA-256
 │       │   └── exporter.rs       ← Assemble bilingual ePub ZIP from translations table using spine_item_href + paragraph_index locators
 │       ├── llm/
 │       │   ├── mod.rs            ← Re-exports; LlmClient struct definition
-│       │   ├── client.rs         ← reqwest client; builds chunked OpenRouter request, parses structured array response, sanitizes each returned paragraph fragment; single `translate_chunk(paragraphs, lang, model) -> Vec<ChunkTranslation>` fn
+│       │   ├── client.rs         ← reqwest client; builds chunked OpenRouter request, parses structured array response, sanitizes each returned paragraph fragment; single `translate_chunk(paragraphs, lang, model) -> Vec<ChunkTranslation>` fn; `ask_stream(messages, model, on_delta)` for streamed SSE chat completions (connect-timeout-only client)
 │       │   └── worker.rs         ← Translation job runner; spawned as tokio task; chunk loop over consecutive paragraph locators; pause/resume via Arc<AtomicBool>; emits Tauri events per persisted paragraph
 │       └── keychain.rs           ← Thin wrapper around `keyring` crate for service "com.folio.app"
 │
@@ -126,8 +127,9 @@ None — PRD §2.1 explicitly states single local user, no authentication.
 │   │   ├── reader/               ← Components used only in ReaderWindow
 │   │   │   ├── ReaderToolbar.tsx ← Left-aligned menu cluster + centered title + top-right utility cluster
 │   │   │   ├── EpubViewer.tsx    ← Mounts epub.js Rendition into a div; owns the Book instance
-│   │   │   ├── SelectionPopup.tsx ← Floating 320×44px bar above selection; color swatches + action buttons
+│   │   │   ├── SelectionPopup.tsx ← Floating 320×44px bar above selection; color swatches + action buttons (incl. Ask AI when API key configured)
 │   │   │   ├── NoteEditor.tsx    ← Floating panel for create/edit/delete notes
+│   │   │   ├── AskAiPanel.tsx    ← Floating selection-anchored panel; ephemeral streamed Q&A about the selected passage
 │   │   │   ├── TocDrawer.tsx     ← Floating contents dropdown panel with top notch and chapter list
 │   │   │   ├── AnnotationsDrawer.tsx ← Floating annotations dropdown panel with tabs + export action
 │   │   │   ├── DisplaySettingsPopover.tsx ← Aa popover: fully opaque font size / family / line height / theme card
@@ -367,7 +369,7 @@ macOS Keychain: service = `"com.folio.app"`, account = `"llm_api_key"`.
 | Token | Font | Size | Weight | Line Height | Usage |
 |---|---|---|---|---|---|
 | `page-title` | system-ui | 28px | 700 | 1.2 | "All", "Recently Read" page heading |
-| `sidebar-section` | system-ui | 11px | 600 | 1.3 | "LIBRARY" — ALL CAPS, letter-spacing 0.06em |
+| `sidebar-section` | system-ui | 13px | 700 | 1.3 | "Library" — sentence case, `white/90` (shipped UI; supersedes the earlier 11px ALL-CAPS token) |
 | `sidebar-item` | system-ui | 14px | 400 | 1.4 | Nav items in sidebar |
 | `sidebar-item-active` | system-ui | 14px | 500 | 1.4 | Active nav item |
 | `body` | system-ui | 13px | 400 | 1.5 | General UI text |
@@ -389,7 +391,32 @@ macOS Keychain: service = `"com.folio.app"`, account = `"llm_api_key"`.
 **Shadow scale (dark context — lighter shadows stand out less):**
 - `sm`: `0 1px 4px rgba(0,0,0,0.40)`
 - `md`: `0 4px 12px rgba(0,0,0,0.50)`
-- `popup`: `0 8px 24px rgba(0,0,0,0.60)` — floating popups on dark bg
+- `popup`: `0 8px 24px rgba(0,0,0,0.60)` — floating dark-glass surfaces (dark reader panels, library menus)
+- `panel`: `0 18px 45px rgba(0,0,0,0.14)` — floating light-glass panels over light/sepia reader themes
+
+**Floating panel chrome (canonical glass recipe):**
+
+All floating chrome (drawers, popovers, note editor, Ask AI panel, pill bars, modals, library menus) uses the shared helpers in `src/lib/panel-chrome.ts` — the single source of truth for these class recipes. Do not hand-roll panel container classes.
+
+- Glass panel (`panelSurface`) — light: `rounded-lg border border-black/[0.08] bg-white/95 text-black shadow-panel backdrop-blur-2xl`; dark: `rounded-lg border border-white/[0.12] bg-[#2c2c2e]/95 text-white shadow-popup backdrop-blur-2xl`
+- Notch (`panelNotch`): 20×20 rotated square straddling the panel's top edge, border/background identical to the panel surface; horizontal position points at the trigger cluster (or selection), clamped inside the rounded corners
+- Pill bar (`barSurface`) — toolbar/selection popup/banners: `rounded-full` with theme-matched border, 85% bg, `backdrop-blur-xl`, inset-highlight shadow
+- Modal (`modalSurface`): same language at `rounded-xl` (20px); overlay `modalOverlay`
+- Theme mapping: reader themes light and sepia both use the light chrome variant; dark uses dark (`resolveChromeTheme`). Library window chrome is always dark-variant.
+- Typography inside panels: `panelHeading` (11px/600/uppercase/0.08em, 40% fg), `panelBody` (13px), `panelMuted` (13px, 45% fg — the single muted value); modal titles are 20px/600/-0.02em
+- Nested-control radius: controls inside an 8px (`md`) container with ~2px padding use the single sanctioned off-scale value `rounded-[6px]` (`NESTED_RADIUS`)
+- Button accent colors are status quo and outside this system: primary blue `--color-primary` (note save, banner actions, quote save), black send/start buttons (Ask AI, translation sheet), blue context-menu hover — the shared helpers unify shape, size, and hover fills only
+
+**z-index ladder (`Z` in panel-chrome.ts):**
+
+| Layer | z | Owners |
+|---|---|---|
+| toolbar | 20 | ReaderToolbar |
+| banner | 30 | TranslationBanner, position-restore toast |
+| panel | 40 | TOC / Annotations / Translation drawers, Display settings popover |
+| modal | 50 | QuoteCoverModal, BookContextMenu, DuplicateBanner |
+| selection | 60 | SelectionPopup |
+| popup | 70 | NoteEditor, AskAiPanel |
 
 **Book card anatomy (matches screenshot):**
 - No card background or border — just the cover image floating on the dark grid bg
@@ -443,6 +470,7 @@ src/windows/ReaderWindow.tsx    ← reads ?bookId from URL
         ├── <ProgressBar>       ← bottom bar: chapter title + percentage
         ├── <SelectionPopup>    ← portal; 320×44px; positioned above selection midpoint
         ├── <NoteEditor>        ← portal; floating panel; conditional on Note action
+        ├── <AskAiPanel>        ← portal; floating panel anchored near selection; ephemeral streamed Q&A (quoted passage + thread + input); conditional on Ask AI action
         ├── <TocDrawer>         ← custom floating dropdown panel, anchored under the left menu cluster
         ├── <AnnotationsDrawer> ← custom floating dropdown panel, anchored under the left menu cluster
         ├── <DisplaySettingsPopover> ← custom opaque popover anchored to Aa button
@@ -495,7 +523,7 @@ Active nav state: Sidebar items compare current `SidebarSection` enum value from
 - **Page transitions:** none — Tauri windows are native; transitions inside the reader are instant page flips
 - **Reader keyboard navigation:** `ArrowRight` and `ArrowDown` advance one page; `ArrowLeft` and `ArrowUp` go back one page
 - **Reader toolbar:** persistently visible while reading; no hover-reveal or idle-fade behavior
-- **Reader dropdown menus (TOC / Annotations / Translation):** custom fade + slight scale animation, 160ms; TOC and Annotations anchor to the left menu cluster, Translation anchors to the right utility cluster, each with a visible notch
+- **Reader dropdown menus (TOC / Annotations / Translation):** shared `panel-in` animation (fade + scale 0.98→1, 160ms, spring ease `cubic-bezier(0.22,1,0.36,1)`); TOC and Annotations anchor to the left menu cluster, Translation anchors to the right utility cluster, each with a visible notch whose border/background exactly match the panel surface; the Display settings popover, selection popup, note editor, Ask AI panel, and library context menu/banner use the same `panel-in` treatment (`animate-fade-in` remains for non-anchored fades)
 - **Loading skeletons:** `animate-pulse` Tailwind class; BookCard skeleton = 160×220 rounded rect + two text bars
 - **Button states:**
   - default: base color
@@ -697,6 +725,32 @@ Side effect: Re-enqueues only paragraphs in failed_paragraph_locators, regroupin
 
 ---
 
+### Ask AI
+
+**`ask_question`**
+```
+Args:    { request_id: string, book_id: string, selection_text: string, context_text: string, question: string, history: { role: "user"|"assistant", content: string }[] }
+Returns: void   // fire-and-forget; the answer arrives via ask:* events keyed by request_id
+Side effect: Spawns tokio task streaming an OpenRouter chat completion (SSE); emits one ask:delta event per content token. Inputs are defensively truncated in Rust (context 8000 chars, selection/question 4000 chars, history last 20 turns). The system prompt contains book title/author, the selected passage, and the surrounding chapter context; conversation history is supplied by the frontend on every call (backend is stateless; nothing is persisted).
+Errors:  throws "NO_API_KEY" | "BOOK_NOT_FOUND" | "SQLITE_LOCK_ERROR"
+```
+
+**`cancel_ask`**
+```
+Args:    { request_id: string }
+Returns: void   // idempotent; sets the request's cancel flag, the stream stops emitting and closes
+```
+
+**Tauri Events emitted by the ask stream (Rust → Frontend):**
+```
+"ask:delta"     payload: { request_id, delta }
+"ask:complete"  payload: { request_id }
+"ask:error"     payload: { request_id, code: "INVALID_API_KEY"|"RATE_LIMITED"|"NETWORK_ERROR"|"ASK_FAILED", message, retry_after_secs?: number }
+```
+(No event is emitted after cancellation; the frontend finalizes the partial answer locally.)
+
+---
+
 ### Export
 
 **`export_bilingual_epub`**
@@ -774,7 +828,7 @@ Side effect: Sends one OpenRouter translate "Hello" → "English" request; does 
 
 5. **epub.js is initialized once per ReaderWindow in `src/lib/epub-bridge.ts`.** The `EpubViewer` component mounts it and stores the `Rendition` instance in a React ref. All other reader components access epub.js state through the `readerStore` (Zustand), not directly.
 
-6. **All OpenRouter calls happen exclusively in Rust (`src-tauri/src/llm/client.rs`).** The API key is read from Keychain in Rust and set as `Authorization: Bearer {key}` on the reqwest request. The key is never serialized into any Tauri event payload or IPC response. The only renderer-visible secret state is `has_api_key() -> { configured: boolean }`.
+6. **All OpenRouter calls happen exclusively in Rust (`src-tauri/src/llm/client.rs`).** The API key is read from Keychain in Rust and set as `Authorization: Bearer {key}` on the reqwest request. The key is never serialized into any Tauri event payload or IPC response. The only renderer-visible secret state is `has_api_key() -> { configured: boolean }`. Streamed Ask AI responses follow the same rule: SSE parsing happens in Rust and only plain-text deltas cross IPC. Ask AI conversation threads are ephemeral — the frontend owns the message history array, passes it back on each `ask_question` call, and nothing is persisted to SQLite.
 
 7. **Highlights are applied to epub.js using `rendition.annotations.add('highlight', cfiRange, {}, id, 'hl', {fill: color, 'fill-opacity': '0.35'})`.** This is called inside a `rendition.hooks.content.register()` callback so highlights re-render on every page turn.
 

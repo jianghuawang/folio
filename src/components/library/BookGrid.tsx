@@ -17,7 +17,7 @@ const STAGGER_STEP_MS = 40;
 function BookCardSkeleton({ index }: { index: number }) {
   return (
     <div className="w-[160px] space-y-1.5" key={index}>
-      <Skeleton className="h-[220px] w-[160px] rounded-[5px] bg-white/8" />
+      <Skeleton className="h-[220px] w-[160px] rounded-sm bg-white/8" />
       <Skeleton className="h-3 w-full bg-white/5" />
       <Skeleton className="h-3 w-4/5 bg-white/5" />
       <Skeleton className="h-2.5 w-3/5 bg-white/[0.03]" />

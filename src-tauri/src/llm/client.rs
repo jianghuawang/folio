@@ -64,6 +64,12 @@ impl std::fmt::Display for TranslateParagraphError {
 
 impl std::error::Error for TranslateParagraphError {}
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TranslationChunkParagraph<'a> {
     pub paragraph_index: i64,
@@ -120,6 +126,98 @@ impl LlmClient {
                 model,
             )
             .await?;
+
+        Ok(())
+    }
+
+    /// Streams a chat completion, calling `on_delta` for each content token.
+    /// `on_delta` returning `false` aborts the stream (cancellation) and the
+    /// method returns `Ok(())`.
+    pub async fn ask_stream(
+        &self,
+        messages: &[ChatMessage],
+        model: &str,
+        mut on_delta: impl FnMut(&str) -> bool,
+    ) -> Result<(), TranslateParagraphError> {
+        use futures_util::StreamExt;
+
+        let resolved_model = if model.trim().is_empty() {
+            DEFAULT_LLM_MODEL
+        } else {
+            model.trim()
+        };
+
+        // The shared client enforces a 30s total timeout, which would cut off
+        // long-running streams mid-answer; use a connect-timeout-only client.
+        let stream_client = Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|error| TranslateParagraphError::Request(error.to_string()))?;
+
+        let response = stream_client
+            .post(OPENROUTER_API_URL)
+            .header(header::AUTHORIZATION, format!("Bearer {}", self.api_key))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("HTTP-Referer", HTTP_REFERER)
+            .header("X-Title", X_TITLE)
+            .json(&json!({
+                "model": resolved_model,
+                "messages": messages,
+                "stream": true,
+                "max_tokens": 2048
+            }))
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        if matches!(
+            response.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ) {
+            return Err(TranslateParagraphError::Auth);
+        }
+
+        if response.status() == StatusCode::TOO_MANY_REQUESTS {
+            let retry_after_secs = response
+                .headers()
+                .get(header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(30);
+
+            return Err(TranslateParagraphError::RateLimited { retry_after_secs });
+        }
+
+        if !response.status().is_success() {
+            return Err(TranslateParagraphError::Request(format!(
+                "OpenRouter request failed with status {}.",
+                response.status()
+            )));
+        }
+
+        let mut byte_stream = response.bytes_stream();
+        let mut line_buffer: Vec<u8> = Vec::new();
+
+        while let Some(chunk) = byte_stream.next().await {
+            let chunk = chunk.map_err(map_request_error)?;
+            line_buffer.extend_from_slice(&chunk);
+
+            for line in drain_complete_lines(&mut line_buffer) {
+                let Some(data) = parse_sse_data_line(&line) else {
+                    continue;
+                };
+
+                if data == "[DONE]" {
+                    return Ok(());
+                }
+
+                if let Some(content) = extract_stream_delta(data)? {
+                    if !on_delta(&content) {
+                        return Ok(());
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -216,6 +314,58 @@ impl LlmClient {
                 )
             })
     }
+}
+
+/// Drains complete `\n`-terminated lines from the buffer, keeping any trailing
+/// partial line. Splitting on the byte 0x0A is UTF-8-safe because `\n` never
+/// occurs inside a multi-byte sequence, so every drained line is complete UTF-8.
+fn drain_complete_lines(buffer: &mut Vec<u8>) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    while let Some(newline_index) = buffer.iter().position(|byte| *byte == b'\n') {
+        let mut line_bytes = buffer.drain(..=newline_index).collect::<Vec<u8>>();
+        line_bytes.pop();
+        if line_bytes.last() == Some(&b'\r') {
+            line_bytes.pop();
+        }
+
+        if let Ok(line) = String::from_utf8(line_bytes) {
+            lines.push(line);
+        }
+    }
+
+    lines
+}
+
+/// Returns the payload of an SSE `data:` line, skipping blank lines and
+/// comment keep-alives such as `: OPENROUTER PROCESSING`.
+fn parse_sse_data_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with(':') {
+        return None;
+    }
+
+    trimmed.strip_prefix("data:").map(str::trim_start)
+}
+
+/// Extracts the content delta from one streamed chunk. Tolerates role-only
+/// deltas, finish_reason chunks, and usage-only chunks with empty `choices`;
+/// surfaces mid-stream `{"error": ...}` events as request errors.
+fn extract_stream_delta(data: &str) -> Result<Option<String>, TranslateParagraphError> {
+    let chunk = serde_json::from_str::<StreamChunk>(data)
+        .map_err(|error| TranslateParagraphError::InvalidResponse(error.to_string()))?;
+
+    if let Some(error) = chunk.error {
+        return Err(TranslateParagraphError::Request(error.message));
+    }
+
+    Ok(chunk
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.delta)
+        .and_then(|delta| delta.content)
+        .filter(|content| !content.is_empty()))
 }
 
 fn map_request_error(error: reqwest::Error) -> TranslateParagraphError {
@@ -661,6 +811,31 @@ struct StructuredChunkTranslationItem {
 }
 
 #[derive(Debug, Deserialize)]
+struct StreamChunk {
+    #[serde(default)]
+    choices: Vec<StreamChoice>,
+    #[serde(default)]
+    error: Option<StreamError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    #[serde(default)]
+    delta: Option<StreamDelta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamDelta {
+    #[serde(default)]
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamError {
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct OpenRouterResponse {
     choices: Vec<OpenRouterChoice>,
 }
@@ -711,9 +886,56 @@ struct OpenRouterMessagePart {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_void_tags, parse_translated_chunk_response, sanitize_translated_html,
-        TranslationChunkParagraph,
+        drain_complete_lines, extract_stream_delta, normalize_void_tags, parse_sse_data_line,
+        parse_translated_chunk_response, sanitize_translated_html, TranslationChunkParagraph,
     };
+
+    #[test]
+    fn drains_only_complete_lines_across_chunks() {
+        let mut buffer = b"data: {\"a\":1}\r\ndata: par".to_vec();
+        assert_eq!(drain_complete_lines(&mut buffer), vec!["data: {\"a\":1}"]);
+        assert_eq!(buffer, b"data: par".to_vec());
+
+        buffer.extend_from_slice(b"tial}\n\n");
+        assert_eq!(
+            drain_complete_lines(&mut buffer),
+            vec!["data: partial}".to_string(), String::new()]
+        );
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn sse_data_line_skips_comments_and_blanks() {
+        assert_eq!(parse_sse_data_line(": OPENROUTER PROCESSING"), None);
+        assert_eq!(parse_sse_data_line(""), None);
+        assert_eq!(parse_sse_data_line("data: [DONE]"), Some("[DONE]"));
+        assert_eq!(parse_sse_data_line("data:{\"x\":1}"), Some("{\"x\":1}"));
+    }
+
+    #[test]
+    fn stream_delta_extracts_content() {
+        let data = r#"{"choices":[{"delta":{"content":"Hel"}}]}"#;
+        assert_eq!(extract_stream_delta(data).unwrap(), Some("Hel".to_string()));
+    }
+
+    #[test]
+    fn stream_delta_tolerates_role_only_and_empty_chunks() {
+        let role_only = r#"{"choices":[{"delta":{"role":"assistant"}}]}"#;
+        assert_eq!(extract_stream_delta(role_only).unwrap(), None);
+
+        let finish = r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#;
+        assert_eq!(extract_stream_delta(finish).unwrap(), None);
+
+        let usage_only = r#"{"usage":{"total_tokens":42}}"#;
+        assert_eq!(extract_stream_delta(usage_only).unwrap(), None);
+    }
+
+    #[test]
+    fn stream_delta_surfaces_mid_stream_errors() {
+        let data = r#"{"error":{"message":"Provider unavailable"},"choices":[]}"#;
+        let error = extract_stream_delta(data).unwrap_err();
+        assert_eq!(error.to_string(), "Provider unavailable");
+    }
 
     #[test]
     fn sanitization_accepts_plain_text() {

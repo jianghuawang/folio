@@ -7,7 +7,18 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  divider,
+  ghostControl,
+  inputSurface,
+  panelAnimation,
+  panelNotch,
+  panelSurface,
+  resolveChromeTheme,
+  Z,
+} from "@/lib/panel-chrome";
 import type { ReaderPopupPosition } from "@/store/readerStore";
+import type { ReadingTheme } from "@/types/settings";
 
 const NoteSchema = z.object({
   body: z.string().trim().min(1, "Note cannot be empty."),
@@ -22,6 +33,7 @@ interface NoteEditorProps {
   onSave: (body: string) => Promise<void>;
   position: ReaderPopupPosition;
   textExcerpt: string;
+  theme?: ReadingTheme;
 }
 
 export function NoteEditor({
@@ -31,7 +43,9 @@ export function NoteEditor({
   onSave,
   position,
   textExcerpt,
+  theme = "light",
 }: NoteEditorProps) {
+  const chromeTheme = resolveChromeTheme(theme);
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
@@ -97,7 +111,7 @@ export function NoteEditor({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70]"
+      className={`fixed inset-0 ${Z.popup}`}
       onMouseDown={() => onCancel()}
     >
       <div
@@ -110,23 +124,32 @@ export function NoteEditor({
           transform: "translateX(-50%)",
         }}
       >
-        <div className="relative">
-          <div className="absolute left-1/2 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-l border-t border-black/10 bg-white/90" />
+        <div className={`relative ${panelAnimation}`}>
+          <div className={`${panelNotch(chromeTheme)} left-1/2`} />
 
-          <div className="max-h-[72vh] overflow-y-auto rounded-[32px] border border-black/10 bg-white/88 p-5 text-black shadow-[0_30px_90px_rgba(0,0,0,0.18)] backdrop-blur-[28px]">
-            <p className="line-clamp-3 text-sm italic leading-6 text-black/55">
+          <div className={`max-h-[72vh] overflow-y-auto p-5 ${panelSurface(chromeTheme)}`}>
+            <p
+              className={`line-clamp-3 text-sm italic leading-6 ${
+                chromeTheme === "dark" ? "text-white/55" : "text-black/55"
+              }`}
+            >
               &quot;{textExcerpt}&quot;
             </p>
-            <div className="mt-4 h-px bg-black/10" />
+            <div className={`mt-4 h-px ${divider(chromeTheme)}`} />
 
             <form className="mt-4" onSubmit={handleSubmit(handleValidSubmit)}>
-              <label className="text-sm font-semibold text-black/70" htmlFor="reader-note-body">
+              <label
+                className={`text-sm font-semibold ${
+                  chromeTheme === "dark" ? "text-white/75" : "text-black/70"
+                }`}
+                htmlFor="reader-note-body"
+              >
                 Note
               </label>
               <Textarea
                 id="reader-note-body"
                 {...register("body")}
-                className="mt-2 min-h-[140px] resize-none rounded-[24px] border-black/10 bg-white/75 px-5 py-4 text-[15px] leading-7 text-black placeholder:text-black/35 focus-visible:ring-[#0A84FF]"
+                className={`mt-2 min-h-[140px] resize-none px-5 py-4 text-[15px] leading-7 focus-visible:ring-[#0A84FF] ${inputSurface(chromeTheme)}`}
                 placeholder="Write a note…"
               />
               {errors.body ? (
@@ -150,7 +173,7 @@ export function NoteEditor({
                   <Button
                     type="button"
                     variant="ghost"
-                    className="rounded-full px-4 text-black/55 hover:bg-black/[0.05] hover:text-black"
+                    className={`rounded-full px-4 ${ghostControl(chromeTheme)}`}
                     onClick={onCancel}
                   >
                     Cancel

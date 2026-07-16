@@ -51,6 +51,7 @@ export default {
         sm: "0 1px 4px rgba(0,0,0,0.40)",
         md: "0 4px 12px rgba(0,0,0,0.50)",
         popup: "0 8px 24px rgba(0,0,0,0.60)",
+        panel: "0 18px 45px rgba(0,0,0,0.14)",
       },
       fontSize: {
         "page-title": ["28px", { lineHeight: "1.2", fontWeight: "700" }],
@@ -69,6 +70,10 @@ export default {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        "panel-in": {
+          "0%": { opacity: "0", transform: "scale(0.98)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
         "book-card-in": {
           "0%": { opacity: "0", transform: "translateY(16px) scale(0.97)" },
           "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
@@ -80,6 +85,7 @@ export default {
       },
       animation: {
         "fade-in": "fade-in 200ms ease",
+        "panel-in": "panel-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both",
         "book-card-in": "book-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both",
         "reader-enter": "reader-enter 0.5s cubic-bezier(0.19, 1, 0.22, 1) both",
       },

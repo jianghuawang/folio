@@ -21,7 +21,8 @@ export function useEpubSelection() {
       if (
         target?.closest("[data-folio-selection-popup='true']") ||
         target?.closest("[data-folio-note-editor='true']") ||
-        target?.closest("[data-folio-quote-cover='true']")
+        target?.closest("[data-folio-quote-cover='true']") ||
+        target?.closest("[data-folio-ask-ai='true']")
       ) {
         return;
       }
@@ -47,6 +48,7 @@ export function useEpubSelection() {
 
       setSelection({
         cfiRange: payload.cfiRange,
+        contextText: payload.contextText,
         highlightId: null,
         position: payload.position,
         text: payload.text,
@@ -64,6 +66,9 @@ export function useEpubSelection() {
     }) => {
       setSelection({
         ...payload,
+        // Highlight re-activation has no live Range to read surroundings from;
+        // Ask AI still works with the passage text alone.
+        contextText: "",
       });
     },
     [setSelection],

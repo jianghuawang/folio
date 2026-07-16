@@ -25,6 +25,7 @@ export interface ReaderLocationState {
 
 export interface ReaderSelectionPayload {
   cfiRange: string;
+  contextText: string;
   position: {
     left: number;
     top: number;
@@ -113,6 +114,9 @@ const NOTE_MARKER_LAYER_ATTRIBUTE = "data-folio-note-marker-layer";
 const NOTE_MARKER_ATTRIBUTE = "data-folio-note-marker";
 const NOTE_MARKER_DEFAULT_COLOR = "#FFD60A";
 const TRANSLATION_CFI_IGNORE_CLASS = "folio-translation";
+const SELECTION_CONTEXT_CHAR_BUDGET = 3000;
+const SELECTION_CONTEXT_BLOCK_SELECTOR =
+  "p, blockquote, li, h1, h2, h3, h4, h5, h6, dd, dt, pre";
 
 const FONT_STACKS: Record<ReadingFontFamily, string> = {
   Georgia: "Georgia, serif",
@@ -695,6 +699,66 @@ function createSelectionSnapshot(selection: Selection): ReaderSelectionSnapshot 
   };
 }
 
+function extractSelectionContext(range: Range): string {
+  try {
+    const container = range.commonAncestorContainer;
+    // nodeType check instead of instanceof: the range's nodes belong to the
+    // chapter iframe's realm, so instanceof Element would compare against the
+    // wrong window's Element class.
+    const element =
+      container.nodeType === Node.ELEMENT_NODE
+        ? (container as Element)
+        : container.parentElement;
+    const anchorBlock = element?.closest(SELECTION_CONTEXT_BLOCK_SELECTOR) ?? element;
+    if (!anchorBlock) {
+      return "";
+    }
+
+    const readBlockText = (block: Element | null): string => {
+      if (!block || block.classList.contains(TRANSLATION_CFI_IGNORE_CLASS)) {
+        return "";
+      }
+
+      return block.textContent?.trim() ?? "";
+    };
+
+    const anchorText = anchorBlock.textContent?.trim() ?? "";
+    const before: string[] = [];
+    const after: string[] = [];
+    let budget = SELECTION_CONTEXT_CHAR_BUDGET - anchorText.length;
+    let previousBlock = anchorBlock.previousElementSibling;
+    let nextBlock = anchorBlock.nextElementSibling;
+
+    while (budget > 0 && (previousBlock || nextBlock)) {
+      if (previousBlock) {
+        const text = readBlockText(previousBlock);
+        if (text) {
+          before.unshift(text);
+          budget -= text.length;
+        }
+        previousBlock = previousBlock.previousElementSibling;
+      }
+
+      if (budget <= 0) {
+        break;
+      }
+
+      if (nextBlock) {
+        const text = readBlockText(nextBlock);
+        if (text) {
+          after.push(text);
+          budget -= text.length;
+        }
+        nextBlock = nextBlock.nextElementSibling;
+      }
+    }
+
+    return [...before, anchorText, ...after].filter(Boolean).join("\n\n");
+  } catch {
+    return "";
+  }
+}
+
 function stopEvent(event: Event) {
   event.preventDefault();
   event.stopPropagation();
@@ -1157,6 +1221,7 @@ export async function createEpubBridge({
     lastSelectionWindow = contents.window;
     onSelectionChange?.({
       cfiRange,
+      contextText: extractSelectionContext(selectionSnapshot.range),
       position: {
         left,
         top,

@@ -3,6 +3,13 @@ import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { Separator } from "@/components/ui/separator";
+import {
+  divider,
+  NESTED_RADIUS,
+  panelAnimationTopLeft,
+  panelSurface,
+  Z,
+} from "@/lib/panel-chrome";
 
 interface BookContextMenuProps {
   open: boolean;
@@ -29,7 +36,7 @@ function MenuButton({
       type="button"
       onClick={onClick}
       className={[
-        "flex h-[26px] w-full items-center gap-[7px] rounded-[5px] px-2 text-left text-[13px] hover:bg-[#0a84ff] hover:text-white",
+        `flex h-[26px] w-full items-center gap-[7px] ${NESTED_RADIUS} px-2 text-left text-[13px] hover:bg-[#0a84ff] hover:text-white`,
         destructive ? "text-[#ff453a]" : "text-white/90",
       ].join(" ")}
     >
@@ -96,7 +103,7 @@ export function BookContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="animate-fade-in fixed z-50 w-[210px] rounded-[10px] border border-white/[0.14] bg-[#2c2c2e]/90 p-1 shadow-popup backdrop-blur-2xl"
+      className={`${panelAnimationTopLeft} fixed ${Z.modal} w-[210px] p-1 ${panelSurface("dark")}`}
       style={{ left: clampedPosition.x, top: clampedPosition.y }}
     >
       <MenuButton
@@ -117,7 +124,7 @@ export function BookContextMenu({
       >
         Book Info…
       </MenuButton>
-      <Separator className="mx-2 my-1 w-auto bg-white/[0.14]" />
+      <Separator className={`mx-2 my-1 w-auto ${divider("dark")}`} />
       <MenuButton
         destructive
         icon={<Trash2 className="h-[14px] w-[14px] stroke-[1.8]" />}

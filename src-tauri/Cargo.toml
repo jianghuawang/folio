@@ -17,7 +17,8 @@ image = "~0.25.0"
 keyring = { version = "~3.3.0", features = ["apple-native", "windows-native"] }
 minidom = "~0.15.2"
 quick-xml = { version = "~0.36.0", features = ["serialize"] }
-reqwest = { version = "~0.12.0", default-features = false, features = ["json", "rustls-tls"] }
+futures-util = { version = "~0.3.0", default-features = false }
+reqwest = { version = "~0.12.0", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "~0.31.0", features = ["bundled"] }
 rusqlite_migration = "~1.2.0"
 serde = { version = "~1.0.0", features = ["derive"] }

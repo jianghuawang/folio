@@ -30,10 +30,10 @@ function SidebarButton({
       type="button"
       onClick={onClick}
       className={[
-        "flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] transition-colors duration-100",
+        "flex h-[34px] w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[14px] transition-colors duration-100",
         active
           ? "bg-white/[0.17] text-white"
-          : "text-white/85 hover:bg-white/[0.07]",
+          : "text-white/85 hover:bg-white/[0.08]",
       ].join(" ")}
     >
       <Icon
@@ -78,7 +78,7 @@ export function Sidebar({
       )}
 
       <nav className="flex-1 overflow-y-auto px-3 pb-6">
-        <div className="group/search relative flex h-[34px] items-center rounded-[8px] transition-colors duration-100 focus-within:bg-white/[0.07] hover:bg-white/[0.07]">
+        <div className="group/search relative flex h-[34px] items-center rounded-md transition-colors duration-100 focus-within:bg-white/[0.08] hover:bg-white/[0.08]">
           <Search className="pointer-events-none ml-2.5 h-[18px] w-[18px] shrink-0 stroke-[1.7] text-white/75" />
           <input
             value={searchQuery}

@@ -19,7 +19,7 @@ export function EmptyState({ onImportClick }: EmptyStateProps) {
       <button
         type="button"
         onClick={onImportClick}
-        className="mt-6 inline-flex h-[28px] items-center justify-center rounded-[7px] bg-[#0a84ff] px-4 text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.2)] transition-colors hover:bg-[#2492ff] active:bg-[#0a7ae0]"
+        className="mt-6 inline-flex h-[28px] items-center justify-center rounded-md bg-[#0a84ff] px-4 text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.3),inset_0_0.5px_0_rgba(255,255,255,0.2)] transition-colors hover:bg-[#2492ff] active:bg-[#0a7ae0]"
       >
         Import Books…
       </button>

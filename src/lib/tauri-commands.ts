@@ -587,3 +587,39 @@ export async function exportBilingualEpub(
     );
   }
 }
+
+export interface AskTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function askQuestion(payload: {
+  requestId: string;
+  bookId: string;
+  selectionText: string;
+  contextText: string;
+  question: string;
+  history: AskTurn[];
+}): Promise<void> {
+  try {
+    await invokeTauri<void>("ask_question", { ...payload });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError("ASK_FAILED", `Failed to ask question: ${String(error)}`);
+  }
+}
+
+export async function cancelAsk(requestId: string): Promise<void> {
+  try {
+    await invokeTauri<void>("cancel_ask", { requestId });
+  } catch (error) {
+    if (error instanceof FolioError) {
+      throw error;
+    }
+
+    throw new FolioError("CANCEL_ASK_FAILED", `Failed to cancel question: ${String(error)}`);
+  }
+}

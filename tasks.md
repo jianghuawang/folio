@@ -29,6 +29,8 @@
 | 26   | [V2] Export Annotations                           | 25           | Medium          |
 | 27   | [V2] Dictionary / Wikipedia Lookup                | 26           | Medium          |
 | 28   | [V2] Reading Goals                                | 27           | Medium          |
+| 29   | Ask AI About Selection (streamed Q&A)             | 15, 17       | High            |
+| 30   | Unified UI Chrome Language                        | 15–18, 29    | High            |
 
 
 ---
@@ -1695,3 +1697,137 @@ Do NOT touch:
 ### ⚠️ Risks & Conflicts
 
 TECH_DESIGN.md has no schema, API, or component design for reading goals, so this task is a blocked V2 placeholder until the spec is extended.
+
+---
+
+## Task 29: Ask AI About Selection (streamed Q&A)
+
+**Status:** [x] Finished
+
+### Scope
+
+Add an "Ask AI" action to the reader's text-selection popup that opens a floating, selection-anchored panel where the user asks questions about the selected passage and receives streamed OpenRouter answers with follow-up support. Conversations are ephemeral (in-memory only). Includes the Rust SSE streaming client, `ask_question`/`cancel_ask` commands, `ask:*` events, frontend context extraction, hook, and panel UI.
+
+### PRD References
+
+- [Section name]: PRD.md Section 3 — Feature 17 "Ask AI About Selection" (and amended Feature 6 popup contents)
+- [Wireframe]: PRD.md Section 5b — "Reader Window — Text Selection Popup Bar" (updated) and "Reader Window — Ask AI Panel"
+- [States]: PRD.md Section 7.2 (Ask AI awaiting first token) and 7.3 (Ask AI auth/rate-limit/network errors, stopped mid-answer); Section 6.2 (ephemeral conversation state)
+
+### TECH_DESIGN References
+
+- [Stack]: TECH_DESIGN.md Section 1 — locked stack; adds reqwest `stream` feature + `futures-util` only
+- [Structure]: TECH_DESIGN.md Section 2 — `src-tauri/src/commands/ask.rs`, `src/components/reader/AskAiPanel.tsx`, `src/hooks/useAskAi.ts`
+- [API]: TECH_DESIGN.md Section 5 — "Ask AI" command/event contracts (`ask_question`, `cancel_ask`, `ask:delta`/`ask:complete`/`ask:error`)
+- [Frontend]: TECH_DESIGN.md Section 4c — `<AskAiPanel>` under ReaderWindow
+- [Pattern]: TECH_DESIGN.md Section 6 — rule 6 (OpenRouter in Rust only; text deltas only across IPC; ephemeral threads), rules 1/3/4
+
+### Files
+
+Create:
+
+- `src-tauri/src/commands/ask.rs` — `ask_question` / `cancel_ask` commands, system prompt, per-request cancel flags
+- `src/hooks/useAskAi.ts` — ephemeral thread state, `ask:*` event subscription keyed by request_id, ask/stop/retry
+- `src/components/reader/AskAiPanel.tsx` — selection-anchored floating panel (quoted passage, thread, streaming row, input, stop, errors)
+
+Modify:
+
+- `src-tauri/Cargo.toml` — reqwest `stream` feature, `futures-util`
+- `src-tauri/src/llm/client.rs` — `ChatMessage`, `ask_stream` SSE method + parser helpers + tests
+- `src-tauri/src/llm/mod.rs` — `AskDeltaEvent` / `AskCompleteEvent` / `AskErrorEvent`
+- `src-tauri/src/commands/mod.rs`, `src-tauri/src/lib.rs` — module + command registration
+- `src-tauri/src/commands/translations.rs` — `read_llm_model` made `pub(crate)`
+- `src/lib/epub-bridge.ts` — `contextText` on selection payload; `extractSelectionContext`
+- `src/store/readerStore.ts` — `askAi` slice + selection `contextText`
+- `src/hooks/useEpubSelection.ts` — context passthrough; `data-folio-ask-ai` outside-click allowlist
+- `src/lib/tauri-commands.ts`, `src/types/events.ts` — typed wrappers and event payload types
+- `src/components/reader/SelectionPopup.tsx` — gated "Ask AI" button
+- `src/windows/ReaderWindow.tsx` — action wiring + panel rendering
+
+Do NOT touch:
+
+- `src-tauri/src/llm/worker.rs` — translation job flow is unrelated
+- `src/components/reader/TranslationSheet.tsx` — translation UI is unrelated
+
+### Acceptance Criteria
+
+- "Ask AI" appears in the selection popup only when an API key is configured
+- Panel shows the quoted passage; answers stream word-by-word with a "Thinking…" state before the first token
+- Follow-up questions reuse the passage + prior turns; Stop keeps the partial answer; Retry re-sends after errors
+- Conversation is discarded when the panel closes; nothing is persisted
+- Surrounding-context extraction skips injected `.folio-translation` paragraphs
+- All IPC goes through `src/lib/tauri-commands.ts`; OpenRouter is called from Rust only
+- No files outside the "Files" section above were modified
+
+### Dependencies
+
+- Requires: Task 15 (selection popup) and Task 17 (translation/LLM plumbing) to be complete
+- Blocks: None
+
+### ⚠️ Risks & Conflicts
+
+The shared reqwest client's 30s total timeout would kill long streams — `ask_stream` uses a dedicated connect-timeout-only client. SSE parsing must tolerate OpenRouter comment keep-alives, role-only deltas, and usage-only chunks.
+
+---
+
+## Task 30: Unified UI Chrome Language
+
+**Status:** [x] Finished
+
+### Scope
+
+Unify the visual design language of all reader floating surfaces (toolbar, selection popup, note editor, Ask AI panel, TOC/annotations/translation drawers, display popover, banner, quote modal) and library chrome (context menu, duplicate banner, sidebar/toolbar radii and hover fills) onto one canonical glass recipe: shared surface/notch/typography/control class helpers, a single z-index ladder, theme-awareness (light/sepia → light chrome, dark → dark chrome), spec-required notches and 160ms fade+scale entrance on anchored panels. Button accent colors are intentionally unchanged.
+
+### PRD References
+
+- [Section name]: PRD.md Section 3 — Feature 6 (popup bar pill glass, dark variant), Features 8/10/15 (rounded glass card + notch panels)
+- [Wireframe]: PRD.md Section 5b — reader panel wireframes (unchanged; visual language only)
+- [States]: PRD.md Section 7 — no state changes; visual treatment only
+
+### TECH_DESIGN References
+
+- [Frontend]: TECH_DESIGN.md Section 4a — "Floating panel chrome (canonical glass recipe)", shadow `panel` token, z-index ladder, corrected `sidebar-section` row
+- [Frontend]: TECH_DESIGN.md Section 4f — `panel-in` fade+scale 160ms with notches on anchored panels
+- [Structure]: TECH_DESIGN.md Section 2 — `src/lib/panel-chrome.ts` as single source of truth
+- [Pattern]: TECH_DESIGN.md Section 6 — Tailwind-utilities-only rule; inline styles only for computed positioning
+
+### Files
+
+Create:
+
+- `src/lib/panel-chrome.ts` — theme-parameterized literal class-string helpers (`panelSurface`, `panelNotch`, `barSurface`, `modalSurface`, typography/control helpers, `Z` ladder, `NESTED_RADIUS`)
+- `src/hooks/useAnchoredPanel.ts` — shared drawer positioning (extracted from the three drawers) + `notchLeft`
+
+Modify:
+
+- `tailwind.config.ts` — `shadow-panel` token, `panel-in` keyframe/animation
+- `src/components/reader/{ReaderToolbar,SelectionPopup,NoteEditor,AskAiPanel,TocDrawer,AnnotationsDrawer,TranslationSheet,DisplaySettingsPopover,TranslationBanner,QuoteCoverModal,ReaderSelect}.tsx` — shared recipes + theme props + notches
+- `src/windows/ReaderWindow.tsx` — theme prop wiring; position-restore toast onto `barSurface`
+- `src/components/library/{BookContextMenu,DuplicateBanner,Sidebar,LibraryToolbar}.tsx` — dark-variant recipe / radii + hover-fill normalization
+- `PRD.md`, `TECH_DESIGN.md` — spec alignment
+
+Do NOT touch:
+
+- `src/components/ui/` — CLI-generated shadcn primitives stay stock
+- `src/windows/SettingsWindow.tsx`, `src/components/settings/` — out of scope
+- `src/components/library/BookInfoSheet.tsx` — already token-based
+- Sidebar width, backgrounds, row height, active fill — deliberate design kept as-is
+
+### Acceptance Criteria
+
+- Every reader floating surface adapts to the reading theme (sepia maps to light chrome)
+- TOC/Annotations/Translation drawers have visible notches pointing at their trigger cluster, tracking resize/clamp
+- Anchored panels animate with `panel-in` (fade + scale, 160ms)
+- One z-index ladder (20/30/40/50/60/70) from `panel-chrome.ts`
+- All container radii on the sm/md/lg/xl/full token scale (single sanctioned 6px nested value)
+- Button accent colors byte-identical to before; no behavior, positioning, or event changes
+- Library context menu and duplicate banner share the dark glass recipe
+
+### Dependencies
+
+- Requires: Tasks 15–18 and 29 complete (all affected surfaces exist)
+- Blocks: None
+
+### ⚠️ Risks & Conflicts
+
+Intentional visual deltas signed off in planning: Note editor/Ask AI 32px→12px radius and bg /88→/95; Quote modal 34px→20px; selection popup bg /96→/85 (toolbar recipe). Black CTAs on dark panels have low contrast — colors frozen by decision, flagged for a future call.

@@ -3,6 +3,16 @@ import { Minus, Plus } from "lucide-react";
 
 import { ReaderSelect } from "@/components/reader/ReaderSelect";
 import { Button } from "@/components/ui/button";
+import {
+  controlSurface,
+  ghostControl,
+  NESTED_RADIUS,
+  panelHeading,
+  panelNotch,
+  panelSurface,
+  resolveChromeTheme,
+  Z,
+} from "@/lib/panel-chrome";
 import type { ReadingSettings, ReadingSettingsUpdate } from "@/types/settings";
 
 const FONT_FAMILY_OPTIONS = [
@@ -37,7 +47,8 @@ export function DisplaySettingsPopover({
 }: DisplaySettingsPopoverProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const darkTheme = settings.theme === "dark";
+  const chromeTheme = resolveChromeTheme(settings.theme);
+  const darkTheme = chromeTheme === "dark";
 
   useEffect(() => {
     if (!open) {
@@ -71,14 +82,9 @@ export function DisplaySettingsPopover({
     }
   }, [disabled]);
 
-  const labelClassName = [
-    "text-[11px] font-semibold uppercase tracking-[0.08em]",
-    darkTheme ? "text-white/40" : "text-black/40",
-  ].join(" ");
-
-  const controlSurfaceClassName = darkTheme
-    ? "border border-white/[0.08] bg-white/[0.06]"
-    : "border border-black/[0.08] bg-black/[0.04]";
+  const labelClassName = panelHeading(chromeTheme);
+  const controlSurfaceClassName = controlSurface(chromeTheme);
+  const segmentedButtonClassName = `h-7 w-7 ${NESTED_RADIUS} ${ghostControl(chromeTheme)}`;
 
   return (
     <div ref={containerRef} className="relative">
@@ -108,19 +114,18 @@ export function DisplaySettingsPopover({
         <div
           role="dialog"
           aria-label="Display settings"
-          className={[
-            "animate-fade-in absolute right-0 top-[calc(100%+10px)] z-30 w-[272px] rounded-[12px] border p-4 shadow-popup backdrop-blur-2xl",
-            darkTheme
-              ? "border-white/[0.12] bg-[#2c2c2e]/95 text-white"
-              : "border-black/[0.08] bg-white/95 text-black",
-          ].join(" ")}
+          className={`animate-panel-in origin-top-right absolute right-0 top-[calc(100%+10px)] ${Z.panel} w-[272px] p-4 ${panelSurface(chromeTheme)}`}
         >
+          <div
+            className={panelNotch(chromeTheme)}
+            style={{ left: "calc(100% - 18px)" }}
+          />
           <div className="space-y-4">
             <div className="space-y-1.5">
               <p className={labelClassName}>Font Size</p>
               <div
                 className={[
-                  "flex items-center justify-between rounded-[8px] px-1 py-1",
+                  "flex items-center justify-between rounded-md px-1 py-1",
                   controlSurfaceClassName,
                 ].join(" ")}
               >
@@ -128,12 +133,7 @@ export function DisplaySettingsPopover({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className={[
-                    "h-7 w-7 rounded-[6px]",
-                    darkTheme
-                      ? "text-white/70 hover:bg-white/[0.08] hover:text-white"
-                      : "text-black/65 hover:bg-black/[0.05] hover:text-black/85",
-                  ].join(" ")}
+                  className={segmentedButtonClassName}
                   aria-label="Decrease font size"
                   onClick={() =>
                     onUpdate({ font_size: Math.max(12, Math.min(32, settings.font_size - 1)) })
@@ -153,12 +153,7 @@ export function DisplaySettingsPopover({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className={[
-                    "h-7 w-7 rounded-[6px]",
-                    darkTheme
-                      ? "text-white/70 hover:bg-white/[0.08] hover:text-white"
-                      : "text-black/65 hover:bg-black/[0.05] hover:text-black/85",
-                  ].join(" ")}
+                  className={segmentedButtonClassName}
                   aria-label="Increase font size"
                   onClick={() =>
                     onUpdate({ font_size: Math.max(12, Math.min(32, settings.font_size + 1)) })
@@ -184,7 +179,7 @@ export function DisplaySettingsPopover({
 
             <div className="space-y-1.5">
               <p className={labelClassName}>Line Spacing</p>
-              <div className={["grid grid-cols-3 gap-0.5 rounded-[8px] p-0.5", controlSurfaceClassName].join(" ")}>
+              <div className={["grid grid-cols-3 gap-0.5 rounded-md p-0.5", controlSurfaceClassName].join(" ")}>
                 {LINE_HEIGHT_OPTIONS.map((option) => {
                   const isActive = settings.line_height === option.value;
 
@@ -194,7 +189,7 @@ export function DisplaySettingsPopover({
                       type="button"
                       onClick={() => onUpdate({ line_height: option.value })}
                       className={[
-                        "h-7 rounded-[6px] text-[12px] font-medium transition-colors",
+                        `h-7 ${NESTED_RADIUS} text-[12px] font-medium transition-colors`,
                         isActive
                           ? darkTheme
                             ? "bg-white/[0.16] text-white shadow-sm"
@@ -223,7 +218,7 @@ export function DisplaySettingsPopover({
                       type="button"
                       onClick={() => onUpdate({ theme: option.id })}
                       className={[
-                        "flex h-10 items-center justify-center rounded-[8px] border text-[12px] font-medium transition-all",
+                        "flex h-10 items-center justify-center rounded-md border text-[12px] font-medium transition-all",
                         option.bgClassName,
                         option.textClassName,
                         isActive

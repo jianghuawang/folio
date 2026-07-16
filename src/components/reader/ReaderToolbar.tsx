@@ -9,6 +9,7 @@ import type { ReactNode, Ref } from "react";
 
 import { DisplaySettingsPopover } from "@/components/reader/DisplaySettingsPopover";
 import { Button } from "@/components/ui/button";
+import { barSurface, ghostControl, resolveChromeTheme, Z } from "@/lib/panel-chrome";
 import { isMacOS } from "@/lib/platform";
 import type { ReaderAnnotationsTab } from "@/store/readerStore";
 import type { ReadingSettings } from "@/types/settings";
@@ -43,12 +44,7 @@ function isDarkReaderTheme(theme: ReadingSettings["theme"]) {
 }
 
 function clusterClassName(darkTheme: boolean) {
-  return [
-    "flex items-center gap-0.5 rounded-full p-1 backdrop-blur-xl",
-    darkTheme
-      ? "border border-white/[0.09] bg-[#28282a]/85 shadow-[0_0.5px_0_rgba(255,255,255,0.08)_inset,0_10px_30px_rgba(0,0,0,0.3)]"
-      : "border border-black/[0.06] bg-white/85 shadow-[0_0.5px_0_rgba(255,255,255,0.7)_inset,0_10px_30px_rgba(0,0,0,0.1)]",
-  ].join(" ");
+  return `flex items-center gap-0.5 p-1 ${barSurface(darkTheme ? "dark" : "light")}`;
 }
 
 function ToolbarIconButton({
@@ -84,9 +80,7 @@ function ToolbarIconButton({
           ? darkTheme
             ? "bg-white/[0.14] text-white"
             : "bg-black/[0.09] text-black"
-          : darkTheme
-            ? "text-white/70 hover:bg-white/[0.08] hover:text-white/95"
-            : "text-black/65 hover:bg-black/[0.05] hover:text-black/85",
+          : ghostControl(resolveChromeTheme(theme)),
       ].join(" ")}
       aria-label={label}
       title={label}
@@ -123,7 +117,7 @@ export function ReaderToolbar({
   const darkTheme = isDarkReaderTheme(readingSettings.theme);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
+    <div className={`pointer-events-none absolute inset-x-0 top-0 ${Z.toolbar}`}>
       {/* Left cluster clears the macOS traffic lights. */}
       <div
         className={[
@@ -190,12 +184,9 @@ export function ReaderToolbar({
             <button
               type="button"
               onClick={onToggleBilingualMode}
-              className={[
-                "h-9 rounded-full px-3 text-[13px] font-medium transition-colors",
-                darkTheme
-                  ? "text-white/70 hover:bg-white/[0.08] hover:text-white/95"
-                  : "text-black/65 hover:bg-black/[0.05] hover:text-black/85",
-              ].join(" ")}
+              className={`h-9 rounded-full px-3 text-[13px] font-medium ${ghostControl(
+                darkTheme ? "dark" : "light",
+              )}`}
             >
               Bilingual
             </button>

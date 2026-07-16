@@ -9,9 +9,17 @@ export interface ReaderPopupPosition {
 
 export interface ReaderSelectionState {
   cfiRange: string;
+  contextText: string;
   highlightId: string | null;
   position: ReaderPopupPosition;
   text: string;
+}
+
+export interface ReaderAskAiState {
+  contextText: string;
+  open: boolean;
+  passage: string;
+  position: ReaderPopupPosition;
 }
 
 export interface ReaderNoteEditorState {
@@ -48,6 +56,7 @@ interface ReaderStore {
   annotationMetaByKey: Record<string, ReaderAnnotationMeta>;
   annotationsOpen: boolean;
   annotationsTab: ReaderAnnotationsTab;
+  askAi: ReaderAskAiState | null;
   bilingualMode: boolean;
   bridge: EpubBridge | null;
   currentLanguage: string | null;
@@ -64,11 +73,13 @@ interface ReaderStore {
   clearPendingNavigationCfi: () => void;
   clearSelection: () => void;
   closeAnnotations: () => void;
+  closeAskAi: () => void;
   closeNoteEditor: () => void;
   closeQuoteCover: () => void;
   closeToc: () => void;
   closeTranslationSheet: () => void;
   openAnnotations: (tab?: ReaderAnnotationsTab) => void;
+  openAskAi: (state: Omit<ReaderAskAiState, "open">) => void;
   openNoteEditor: (state: Omit<ReaderNoteEditorState, "open">) => void;
   openQuoteCover: (text: string) => void;
   openToc: () => void;
@@ -92,6 +103,7 @@ export const useReaderStore = create<ReaderStore>((set) => ({
   annotationMetaByKey: {},
   annotationsOpen: false,
   annotationsTab: "highlights",
+  askAi: null,
   bilingualMode: false,
   bridge: null,
   currentLanguage: null,
@@ -115,6 +127,7 @@ export const useReaderStore = create<ReaderStore>((set) => ({
   clearPendingNavigationCfi: () => set({ pendingNavigationCfi: null }),
   clearSelection: () => set({ selection: null }),
   closeAnnotations: () => set({ annotationsOpen: false }),
+  closeAskAi: () => set({ askAi: null }),
   closeNoteEditor: () => set({ noteEditor: null }),
   closeQuoteCover: () => set({ quoteCover: null }),
   closeToc: () => set({ tocOpen: false }),
@@ -126,8 +139,18 @@ export const useReaderStore = create<ReaderStore>((set) => ({
       tocOpen: false,
       translationSheetOpen: false,
     }),
+  openAskAi: (state) =>
+    set({
+      askAi: {
+        ...state,
+        open: true,
+      },
+      noteEditor: null,
+      quoteCover: null,
+    }),
   openNoteEditor: (state) =>
     set({
+      askAi: null,
       noteEditor: {
         ...state,
         open: true,
@@ -135,6 +158,7 @@ export const useReaderStore = create<ReaderStore>((set) => ({
     }),
   openQuoteCover: (text) =>
     set({
+      askAi: null,
       quoteCover: {
         open: true,
         text,
@@ -158,6 +182,7 @@ export const useReaderStore = create<ReaderStore>((set) => ({
       annotationMetaByKey: {},
       annotationsOpen: false,
       annotationsTab: "highlights",
+      askAi: null,
       bilingualMode: false,
       bridge: null,
       currentLanguage: null,

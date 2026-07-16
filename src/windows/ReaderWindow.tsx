@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AnnotationsDrawer } from "@/components/reader/AnnotationsDrawer";
+import { AskAiPanel } from "@/components/reader/AskAiPanel";
 import { EpubViewer } from "@/components/reader/EpubViewer";
 import { NoteEditor } from "@/components/reader/NoteEditor";
 import { PageChevrons } from "@/components/reader/PageChevrons";
@@ -24,6 +25,7 @@ import {
   useUpdateHighlight,
 } from "@/hooks/useHighlights";
 import { useDeleteNote, useNotes, useSaveNote, useUpdateNote } from "@/hooks/useNotes";
+import { barSurface, resolveChromeTheme, Z } from "@/lib/panel-chrome";
 import { isMacOS } from "@/lib/platform";
 import { FolioError } from "@/lib/tauri-commands";
 import { useReadingSettings, useUpdateReadingSettings } from "@/hooks/useReadingSettings";
@@ -139,7 +141,10 @@ export default function ReaderWindow() {
 
   const bridge = useReaderStore((state) => state.bridge);
   const annotationMetaByKey = useReaderStore((state) => state.annotationMetaByKey);
+  const askAi = useReaderStore((state) => state.askAi);
   const closeAnnotations = useReaderStore((state) => state.closeAnnotations);
+  const closeAskAi = useReaderStore((state) => state.closeAskAi);
+  const openAskAi = useReaderStore((state) => state.openAskAi);
   const closeNoteEditor = useReaderStore((state) => state.closeNoteEditor);
   const closeQuoteCover = useReaderStore((state) => state.closeQuoteCover);
   const closeTranslationSheet = useReaderStore((state) => state.closeTranslationSheet);
@@ -697,11 +702,18 @@ export default function ReaderWindow() {
           onResume={() => void translation.resumeMutation.mutateAsync()}
           onRetryFailed={() => void translation.retryMutation.mutateAsync()}
           statusMessage={translation.statusMessage}
+          theme={currentReadingSettings.theme}
         />
 
         {invalidPositionRestore ? (
-          <div className="absolute inset-x-0 top-16 z-30 flex justify-center px-6">
-            <div className="rounded-full bg-[--color-bg-surface] px-4 py-2 text-sm text-[--color-text-secondary] shadow-popup">
+          <div className={`absolute inset-x-0 top-16 ${Z.banner} flex justify-center px-6`}>
+            <div
+              className={`px-4 py-2 text-sm ${barSurface(
+                resolveChromeTheme(currentReadingSettings.theme),
+              )} ${
+                currentReadingSettings.theme === "dark" ? "text-white/85" : "text-black/80"
+              }`}
+            >
               Your reading position could not be restored.
             </div>
           </div>
@@ -730,6 +742,7 @@ export default function ReaderWindow() {
           currentHref={location.href}
           items={tocItems}
           open={tocOpen}
+          theme={currentReadingSettings.theme}
           onOpenChange={(open) => {
             if (open) {
               openToc();
@@ -745,6 +758,16 @@ export default function ReaderWindow() {
 
         <SelectionPopup
           activeColor={activeHighlight?.color ?? null}
+          onAskAi={() => {
+            if (selection) {
+              openAskAi({
+                contextText: selection.contextText,
+                passage: selection.text,
+                position: selection.position,
+              });
+              clearSelection();
+            }
+          }}
           onColorSelect={handleColorSelect}
           onOpenNote={handleOpenNoteEditor}
           onOpenQuote={() => {
@@ -755,9 +778,22 @@ export default function ReaderWindow() {
           }}
           onRemoveHighlight={handleRemoveHighlightFromPopup}
           position={selection?.position ?? { left: 0, top: 0 }}
+          showAskAi={apiKeyStatusQuery.data?.configured ?? false}
           showRemoveHighlight={Boolean(selection?.highlightId)}
-          visible={Boolean(selection) && !noteEditor}
+          theme={currentReadingSettings.theme}
+          visible={Boolean(selection) && !noteEditor && !askAi}
         />
+
+        {askAi && bookId ? (
+          <AskAiPanel
+            bookId={bookId}
+            contextText={askAi.contextText}
+            onClose={closeAskAi}
+            passage={askAi.passage}
+            position={askAi.position}
+            theme={currentReadingSettings.theme}
+          />
+        ) : null}
 
         {noteEditor ? (
           <NoteEditor
@@ -767,6 +803,7 @@ export default function ReaderWindow() {
             onSave={handleSaveNote}
             position={noteEditor.position}
             textExcerpt={noteEditor.textExcerpt}
+            theme={currentReadingSettings.theme}
           />
         ) : null}
 
@@ -801,6 +838,7 @@ export default function ReaderWindow() {
           onRetryNotes={() => void notesQuery.refetch()}
           onTabChange={setAnnotationsTab}
           open={annotationsOpen}
+          theme={currentReadingSettings.theme}
         />
 
         <TranslationSheet
@@ -845,12 +883,14 @@ export default function ReaderWindow() {
           }}
           open={translationSheetOpen}
           pending={translation.startMutation.isPending}
+          theme={currentReadingSettings.theme}
         />
 
         {quoteCover ? (
           <QuoteCoverModal
             book={book}
             initialText={quoteCover.text}
+            theme={currentReadingSettings.theme}
             onOpenChange={(open) => {
               if (!open) {
                 closeQuoteCover();
