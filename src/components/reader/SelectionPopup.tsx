@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { FileImage, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -57,9 +58,30 @@ export function SelectionPopup({
   theme = "light",
   visible,
 }: SelectionPopupProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+
+  // The bar is centered on the selection midpoint; clamp by its real width
+  // (which varies with the Ask AI / remove buttons) so it never overflows.
+  useLayoutEffect(() => {
+    if (visible) {
+      setMeasuredWidth(containerRef.current?.offsetWidth ?? 0);
+    }
+  });
+
   if (!visible) {
     return null;
   }
+
+  const viewportPadding = 12;
+  const halfWidth = measuredWidth / 2;
+  const clampedLeft =
+    measuredWidth > 0 && typeof window !== "undefined"
+      ? Math.min(
+          Math.max(position.left, viewportPadding + halfWidth),
+          window.innerWidth - viewportPadding - halfWidth,
+        )
+      : position.left;
 
   const chromeTheme = resolveChromeTheme(theme);
   const actionButtonClassName = `inline-flex h-8 items-center gap-2 rounded-full px-3 text-sm font-medium ${ghostControl(chromeTheme)}`;
@@ -73,10 +95,11 @@ export function SelectionPopup({
 
   const popup = (
     <div
+      ref={containerRef}
       data-folio-selection-popup="true"
       className={`fixed ${Z.selection}`}
       style={{
-        left: position.left,
+        left: clampedLeft,
         top: Math.max(24, position.top - 72),
         transform: "translateX(-50%)",
       }}

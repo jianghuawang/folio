@@ -12,7 +12,6 @@ import {
   inputSurface,
   panelAnimation,
   panelMuted,
-  panelNotch,
   panelSurface,
   resolveChromeTheme,
   Z,
@@ -135,14 +134,6 @@ export function AskAiPanel({
             window.innerHeight - viewportPadding - measuredHeight,
           ),
         );
-  // Keep the notch pointing at the selection even when the panel is clamped
-  // at a viewport edge. The wrapper has 4px horizontal padding on each side.
-  const notchContainerWidth = popupWidth - 8;
-  const notchLeft = Math.min(
-    Math.max(position.left - (clampedLeft - notchContainerWidth / 2), 28),
-    notchContainerWidth - 28,
-  );
-
   return createPortal(
     <div className={`fixed inset-0 ${Z.popup}`} onMouseDown={handleClose}>
       <div
@@ -156,11 +147,6 @@ export function AskAiPanel({
         }}
       >
         <div className={`relative ${panelAnimation}`}>
-          <div
-            className={panelNotch(chromeTheme)}
-            style={{ left: notchLeft }}
-          />
-
           <div
             ref={panelRef}
             className={`max-h-[72vh] overflow-y-auto p-5 ${panelSurface(chromeTheme)}`}

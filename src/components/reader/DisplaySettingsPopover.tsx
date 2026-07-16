@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 
 import { ReaderSelect } from "@/components/reader/ReaderSelect";
@@ -46,7 +46,6 @@ export function DisplaySettingsPopover({
   settings,
 }: DisplaySettingsPopoverProps) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const chromeTheme = resolveChromeTheme(settings.theme);
   const darkTheme = chromeTheme === "dark";
 
@@ -55,23 +54,15 @@ export function DisplaySettingsPopover({
       return undefined;
     }
 
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
       }
     };
 
-    document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
@@ -87,7 +78,7 @@ export function DisplaySettingsPopover({
   const segmentedButtonClassName = `h-7 w-7 ${NESTED_RADIUS} ${ghostControl(chromeTheme)}`;
 
   return (
-    <div ref={containerRef} className="relative">
+    <div className="relative">
       <button
         type="button"
         disabled={disabled}
@@ -111,11 +102,18 @@ export function DisplaySettingsPopover({
       </button>
 
       {open ? (
-        <div
-          role="dialog"
-          aria-label="Display settings"
-          className={`animate-panel-in origin-top-right absolute right-0 top-[calc(100%+10px)] ${Z.panel} w-[272px] p-4 ${panelSurface(chromeTheme)}`}
-        >
+        <>
+          {/* Full-screen scrim: the reading area is an iframe, so document-level
+              mousedown listeners never see clicks inside it. */}
+          <div
+            className={`fixed inset-0 ${Z.panel}`}
+            onMouseDown={() => setOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-label="Display settings"
+            className={`animate-panel-in origin-top-right absolute right-0 top-[calc(100%+10px)] ${Z.panel} w-[272px] p-4 ${panelSurface(chromeTheme)}`}
+          >
           <div
             className={panelNotch(chromeTheme)}
             style={{ left: "calc(100% - 18px)" }}
@@ -235,7 +233,8 @@ export function DisplaySettingsPopover({
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        </>
       ) : null}
     </div>
   );

@@ -100,7 +100,12 @@ type RenditionLocation = {
   cfi?: string;
   href?: string;
   percentage?: number;
-  start?: { cfi?: string; href?: string; percentage?: number };
+  start?: {
+    cfi?: string;
+    href?: string;
+    percentage?: number;
+    displayed?: { page?: number; total?: number };
+  };
 };
 
 const COVER_SECTION_HINTS = ["cover", "titlepage", "title-page", "frontcover", "front-cover"];
@@ -109,6 +114,8 @@ const MIN_HORIZONTAL_DELTA = 8;
 const INITIAL_DISPLAY_TIMEOUT_MS = 4000;
 const BOOK_READY_TIMEOUT_MS = 4000;
 const SELECTION_SNAPSHOT_TTL_MS = 500;
+const LOCATIONS_PER_SEGMENT = 1024;
+const LOCATIONS_CACHE_PREFIX = `folio:locations:${LOCATIONS_PER_SEGMENT}:`;
 const NOTE_MARKER_SIZE_PX = 7;
 const NOTE_MARKER_LAYER_ATTRIBUTE = "data-folio-note-marker-layer";
 const NOTE_MARKER_ATTRIBUTE = "data-folio-note-marker";
@@ -864,7 +871,43 @@ export async function createEpubBridge({
   applyReadingSettingsToRendition(rendition, readingSettings);
   updateReaderMargins(rendition);
 
-  const resolveProgress = (cfi: string, fallbackProgress?: number | null) => {
+  let lastKnownProgress = Number.isFinite(book.reading_progress)
+    ? Math.min(Math.max(book.reading_progress, 0), 1)
+    : 0;
+
+  // Rough progress from spine position + page-within-chapter, for the window
+  // before epub.js locations are generated (or if generation failed).
+  const spineProgressEstimate = (
+    cfi: string,
+    displayed?: { page?: number; total?: number } | null,
+  ): number | null => {
+    try {
+      const section = (
+        epubBook.spine as unknown as { get: (target: string) => { index?: number } | null }
+      ).get(cfi);
+      const spineCount = spineHrefByIndex.size;
+
+      if (!section || typeof section.index !== "number" || spineCount === 0) {
+        return null;
+      }
+
+      const pageFraction =
+        displayed?.total && displayed.page
+          ? Math.min(Math.max((displayed.page - 1) / displayed.total, 0), 1)
+          : 0;
+
+      return Math.min(Math.max((section.index + pageFraction) / spineCount, 0), 1);
+    } catch {
+      return null;
+    }
+  };
+
+  const resolveProgress = (
+    cfi: string,
+    fallbackProgress?: number | null,
+    displayed?: { page?: number; total?: number } | null,
+    trackAsCurrent = false,
+  ) => {
     let percentage: number | null = null;
 
     try {
@@ -888,11 +931,21 @@ export async function createEpubBridge({
       percentage = book.reading_progress;
     }
 
-    if (!Number.isFinite(percentage ?? NaN)) {
-      return 0;
+    if (!Number.isFinite(percentage ?? NaN) && cfi) {
+      percentage = spineProgressEstimate(cfi, displayed);
     }
 
-    return Math.min(Math.max(percentage ?? 0, 0), 1);
+    if (!Number.isFinite(percentage ?? NaN)) {
+      // Never regress the visible reading position to a hard 0; annotation
+      // lookups keep the old 0 fallback since "current position" would lie.
+      return trackAsCurrent ? lastKnownProgress : 0;
+    }
+
+    const clamped = Math.min(Math.max(percentage ?? 0, 0), 1);
+    if (trackAsCurrent) {
+      lastKnownProgress = clamped;
+    }
+    return clamped;
   };
 
   const invalidateRenderedAnnotations = () => {
@@ -1183,6 +1236,8 @@ export async function createEpubBridge({
     const percentage = resolveProgress(
       currentCfi,
       location.start?.percentage ?? location.percentage ?? null,
+      location.start?.displayed ?? null,
+      true,
     );
 
     onLocationChange({
@@ -1645,6 +1700,21 @@ export async function createEpubBridge({
       })
       .catch(() => undefined);
 
+    // Generating locations is slow (seconds for large books) and progress
+    // reads 0% until it finishes, so cache the result per book content hash.
+    const locationsCacheKey = `${LOCATIONS_CACHE_PREFIX}${book.file_hash}`;
+    let locationsReady = false;
+
+    try {
+      const cachedLocations = window.localStorage.getItem(locationsCacheKey);
+      if (cachedLocations) {
+        epubBook.locations.load(cachedLocations);
+        locationsReady = epubBook.locations.length() > 0;
+      }
+    } catch {
+      locationsReady = false;
+    }
+
     const beginningTarget = getBeginningTarget(tocItems, epubBook);
     const savedCfi = book.last_position_cfi?.trim() || null;
     const renditionManager = (
@@ -1695,15 +1765,25 @@ export async function createEpubBridge({
 
     await syncCurrentLocation(rendition, handleRelocated);
 
-    void epubBook.locations
-      .generate(1024)
-      .then(async () => {
-        if (!destroyed) {
+    if (!locationsReady) {
+      void epubBook.locations
+        .generate(LOCATIONS_PER_SEGMENT)
+        .then(async () => {
+          if (destroyed) {
+            return;
+          }
+
+          try {
+            window.localStorage.setItem(locationsCacheKey, epubBook.locations.save());
+          } catch {
+            // best-effort cache; ignore quota or storage failures
+          }
+
           invalidateRenderedAnnotations();
           await syncCurrentLocation(rendition, handleRelocated);
-        }
-      })
-      .catch(() => undefined);
+        })
+        .catch(() => undefined);
+    }
   } catch (error) {
     bridge.destroy();
     onError(toReaderError(error));
